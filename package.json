@@ -24,6 +24,7 @@
     "test:discord": "tsx scripts/test_prompt14_discord.ts",
     "test:embeds": "tsx scripts/test_prompt15_embeds.ts",
     "test:server": "tsx scripts/test_prompt16_server.ts",
+    "register:discord": "tsx scripts/register_discord_commands.ts",
     "build:webapp": "npm --prefix webapp run build"
   },
   "dependencies": {
