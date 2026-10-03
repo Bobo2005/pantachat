@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { addLiveMarket } from "@/lib/markets";
 
 const TELEGRAM_BOT_TOKEN =
-  process.env.TELEGRAM_BOT_TOKEN | 
+  process.env.TELEGRAM_BOT_TOKEN | ;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
 // =============================================================================
