@@ -9,7 +9,7 @@ import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
 import { getCreatorFeeClaimBuild } from "./panta/claims.js";
 import { reportTradeToPanta } from "../services/attribution-reporter.js";
 import { solanaConnection, waitForConfirmation, buildDevnetVersionedTransaction } from "../utils/solana.js";
-import { broadcastMarketCreatedNotification } from "../services/market-notifier.js";
+import { broadcastMarketCreatedNotification, broadcastTradeNotification } from "../services/market-notifier.js";
 import { pantaGet } from "./panta/client.js";
 
 // =============================================================================
@@ -276,6 +276,25 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
       }).catch((tradeErr) => {
         console.warn(`[Submit API] Local trade record save warning:`, tradeErr.message);
       });
+
+      // Dispatch in-chat confirmation to the Telegram/Discord chat where the trade was placed
+      if (session.chatId) {
+        const marketData = await getMarketById(session.marketId).catch(() => null);
+        broadcastTradeNotification({
+          marketTitle: marketData?.title || payload.title || "Prediction Market",
+          marketId: session.marketId,
+          category: marketData?.category || payload.category,
+          traderPlatformId: session.platformUserId,
+          wallet: activeWallet,
+          outcome: payload.outcome || "yes",
+          amountUsdc: Number(payload.amountUsdc || payload.spendUsdc || 20),
+          signature: finalSig,
+          chatId: session.chatId,
+          platform: session.platform || "telegram",
+        }).catch((notifyErr) => {
+          console.warn(`[Submit API] Trade in-chat notification warning:`, notifyErr.message);
+        });
+      }
     }
 
     // 2. Post-Confirmation for Market Creation

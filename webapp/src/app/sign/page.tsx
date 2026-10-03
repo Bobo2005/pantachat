@@ -75,6 +75,7 @@ interface SessionDetails {
   market?: {
     id: string;
     title: string;
+    description?: string;
     category?: string;
     yesPrice?: number;
     noPrice?: number;
@@ -358,12 +359,17 @@ function SigningFlow() {
           body: JSON.stringify({
             signedTx: signedBase64,
             wallet: publicKey.toBase58(),
+            type: sessionType || (isCreateSession ? "create" : "buy"),
             chatId: (session?.payload as any)?.chatId || queryChatId,
             platform: session?.platform || queryPlatform,
+            user: session?.platformUserId || queryCreator,
             creatorPlatformId: session?.platformUserId || queryCreator,
-            title: session?.payload?.title || queryTitle,
-            description: session?.payload?.description || queryDesc,
-            category: session?.payload?.category || queryCategory,
+            marketId: (session?.payload as any)?.marketId || session?.market?.id || searchParams.get("market"),
+            title: session?.payload?.title || session?.market?.title || queryTitle,
+            description: session?.payload?.description || session?.market?.description || queryDesc,
+            category: session?.payload?.category || session?.market?.category || queryCategory,
+            outcome: (session?.payload as any)?.outcome || queryOutcome,
+            amount: (session?.payload as any)?.amountUsdc || queryAmount,
           }),
         });
 
@@ -427,12 +433,17 @@ function SigningFlow() {
             body: JSON.stringify({
               signature: finalSig,
               wallet: publicKey.toBase58(),
+              type: sessionType || (isCreateSession ? "create" : "buy"),
               chatId: (session?.payload as any)?.chatId || queryChatId,
               platform: session?.platform || queryPlatform,
+              user: session?.platformUserId || queryCreator,
               creatorPlatformId: session?.platformUserId || queryCreator,
-              title: session?.payload?.title || queryTitle,
-              description: session?.payload?.description || queryDesc,
-              category: session?.payload?.category || queryCategory,
+              marketId: (session?.payload as any)?.marketId || session?.market?.id || searchParams.get("market"),
+              title: session?.payload?.title || session?.market?.title || queryTitle,
+              description: session?.payload?.description || session?.market?.description || queryDesc,
+              category: session?.payload?.category || session?.market?.category || queryCategory,
+              outcome: (session?.payload as any)?.outcome || queryOutcome,
+              amount: (session?.payload as any)?.amountUsdc || queryAmount,
             }),
           });
         } catch (notifyErr) {

@@ -223,7 +223,7 @@ export async function createTradeSession(
     expiresAt,
   });
 
-  const signUrl = `${config.WEBAPP_URL}/sign?session=${sessionId}`;
+  const signUrl = `${config.WEBAPP_URL}/sign?session=${sessionId}&market=${params.marketId}&outcome=${params.outcome}&amount=${params.amountUsdc}&chatId=${encodeURIComponent(params.chatId)}&user=${encodeURIComponent(params.platformUserId)}&platform=${params.platform}`;
 
   return {
     sessionId,

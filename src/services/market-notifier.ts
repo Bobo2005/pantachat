@@ -114,3 +114,124 @@ export async function broadcastMarketCreatedNotification(
     }
   }
 }
+
+// =============================================================================
+// Trade Execution Notification Dispatcher
+// =============================================================================
+
+export interface TradeNotificationParams {
+  marketTitle: string;
+  marketId: string;
+  category?: string | null;
+  traderPlatformId?: string | null;
+  wallet?: string | null;
+  outcome: "yes" | "no";
+  amountUsdc: number;
+  signature: string;
+  chatId?: string | null;
+  platform?: "telegram" | "discord" | string | null;
+}
+
+function formatShortWallet(wallet?: string | null): string {
+  if (!wallet || wallet.length < 10) return wallet || "";
+  return `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
+}
+
+/**
+ * Dispatches an on-chain trade confirmation notice directly into the
+ * Telegram group chat or Discord channel where the trade was initiated.
+ */
+export async function broadcastTradeNotification(
+  params: TradeNotificationParams
+): Promise<void> {
+  const {
+    marketTitle,
+    marketId,
+    category,
+    traderPlatformId,
+    wallet,
+    outcome,
+    amountUsdc,
+    signature,
+    chatId,
+    platform = "telegram",
+  } = params;
+
+  if (!chatId) {
+    console.warn(`[Market Notifier] Skipping trade notification: No chatId provided for market ${marketId}`);
+    return;
+  }
+
+  const explorerUrl = `${config.EXPLORER_URL_PREFIX}/tx/${signature}`;
+  const shortWallet = formatShortWallet(wallet);
+  const traderTag = traderPlatformId
+    ? traderPlatformId.startsWith("@")
+      ? traderPlatformId
+      : `@${traderPlatformId}`
+    : "";
+
+  const traderDisplay =
+    traderTag && shortWallet
+      ? `${traderTag} (\`${shortWallet}\`)`
+      : traderTag || (shortWallet ? `\`${shortWallet}\`` : "Anonymous Trader");
+
+  const outcomeUpper = outcome.toUpperCase();
+  const outcomeEmoji = outcomeUpper === "YES" ? "🟢" : "🔴";
+
+  // ---------------------------------------------------------------------------
+  // 1. Telegram In-Chat Trade Confirmation
+  // ---------------------------------------------------------------------------
+  if (platform === "telegram") {
+    try {
+      const confirmationText = [
+        `🎯 *TRADE EXECUTED ON-CHAIN!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📈 *Market:* ${marketTitle}`,
+        ``,
+        `👤 *Trader:* ${traderDisplay}`,
+        `💰 *Position Placed:* $${Number(amountUsdc).toFixed(2)} USDC on *${outcomeUpper}* ${outcomeEmoji}`,
+        `🏷️ *Category:* ${category || "General"}`,
+        ``,
+        `⛓️ [View On-Chain Tx on Solana Explorer](${explorerUrl})`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👇 *Trade this market right now:*`,
+      ].join("\n");
+
+      const buttons = getPresetBuyButtons(marketId, "primary");
+
+      await bot.telegram.sendMessage(chatId, confirmationText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: buttons as any,
+        },
+      });
+
+      console.log(`✅ [Market Notifier] Telegram trade confirmation posted to chat ${chatId} for trader ${traderDisplay}`);
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Telegram trade confirmation notice error:`, err.message);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2. Discord In-Chat Trade Confirmation
+  // ---------------------------------------------------------------------------
+  else if (platform === "discord") {
+    try {
+      const channel = await discordClient.channels.fetch(chatId);
+      if (channel && channel.isTextBased()) {
+        const userMention = traderPlatformId ? `<@${traderPlatformId}>` : (shortWallet || "Trader");
+        await (channel as any).send({
+          content:
+            `🎯 **Trade Placed on Solana!**\n` +
+            `**${userMention}** placed **$${Number(amountUsdc).toFixed(2)} USDC** on **${outcomeUpper}** ${outcomeEmoji}\n` +
+            `📈 **Market:** ${marketTitle}\n` +
+            `🔗 [View On-Chain Tx](${explorerUrl})`,
+        });
+        console.log(`✅ [Market Notifier] Discord trade confirmation posted to channel ${chatId}`);
+      }
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Discord trade confirmation notice error:`, err.message);
+    }
+  }
+}
+

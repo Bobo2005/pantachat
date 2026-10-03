@@ -16,6 +16,7 @@ export interface LiveMarket {
   createdAt: string;
   cutoffAt?: string;
   txSignature?: string;
+  chatId?: string;
 }
 
 // Global in-memory list (persists across requests within lambda instance lifecycle)
@@ -45,6 +46,9 @@ export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): 
       m.title.toLowerCase().trim() === market.title.toLowerCase().trim()
   );
   if (existing) {
+    if (market.chatId && !existing.chatId) {
+      existing.chatId = market.chatId;
+    }
     return existing;
   }
 
@@ -62,6 +66,7 @@ export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): 
     createdAt: "Just now",
     cutoffAt: market.cutoffAt || new Date(Date.now() + 30 * 86400000).toISOString(),
     txSignature: market.txSignature,
+    chatId: market.chatId,
   };
 
   existingList.unshift(newEntry);
