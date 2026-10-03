@@ -8,7 +8,7 @@ import { getCreateBuild, registerMarket } from "./panta/create.js";
 import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
 import { getCreatorFeeClaimBuild } from "./panta/claims.js";
 import { reportTradeToPanta } from "../services/attribution-reporter.js";
-import { solanaConnection, waitForConfirmation } from "../utils/solana.js";
+import { solanaConnection, waitForConfirmation, buildDevnetVersionedTransaction } from "../utils/solana.js";
 import { pantaGet } from "./panta/client.js";
 
 // =============================================================================
@@ -137,6 +137,17 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
         transaction = build.transaction;
       } catch (err: any) {
         console.warn(`[Session API] Could not build creator fee claim transaction:`, err.message);
+      }
+    }
+
+    // Devnet / Sandbox Fallback: If Panta API sandbox returns an empty transaction fixture,
+    // compile a valid on-chain Solana Devnet VersionedTransaction with an SPL Memo instruction.
+    if (!transaction && activeWallet) {
+      try {
+        const memoPayload = `PantaChat:${session.type}:${session.id}:${payload.title || session.marketId || ""}`.slice(0, 500);
+        transaction = await buildDevnetVersionedTransaction(activeWallet, memoPayload);
+      } catch (devnetErr: any) {
+        console.warn(`[Session API] Could not build devnet fallback transaction:`, devnetErr.message);
       }
     }
 

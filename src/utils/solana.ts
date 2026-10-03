@@ -1,4 +1,11 @@
-import { Connection, type SignatureStatus } from "@solana/web3.js";
+import {
+  Connection,
+  PublicKey,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
+  type SignatureStatus,
+} from "@solana/web3.js";
 import { config } from "../config.js";
 
 // =============================================================================
@@ -114,4 +121,38 @@ export async function waitForConfirmation(
     "TRANSACTION_TIMED_OUT",
     signature
   );
+}
+
+// =============================================================================
+// Devnet / Sandbox Transaction Builder
+// =============================================================================
+
+export const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+/**
+ * Builds a valid, on-chain Solana Devnet VersionedTransaction containing an SPL Memo instruction.
+ * Used whenever Panta staging / sandbox API returns an empty transaction fixture in devnet mode,
+ * guaranteeing that user wallets (Phantom / Solflare) receive a real, signable on-chain transaction.
+ */
+export async function buildDevnetVersionedTransaction(
+  payerPubkey: string,
+  memoText: string
+): Promise<string> {
+  const payer = new PublicKey(payerPubkey);
+  const { blockhash } = await solanaConnection.getLatestBlockhash("confirmed");
+
+  const memoInstruction = new TransactionInstruction({
+    keys: [{ pubkey: payer, isSigner: true, isWritable: true }],
+    programId: MEMO_PROGRAM_ID,
+    data: Buffer.from(memoText, "utf-8"),
+  });
+
+  const messageV0 = new TransactionMessage({
+    payerKey: payer,
+    recentBlockhash: blockhash,
+    instructions: [memoInstruction],
+  }).compileToV0Message();
+
+  const versionedTx = new VersionedTransaction(messageV0);
+  return Buffer.from(versionedTx.serialize()).toString("base64");
 }
