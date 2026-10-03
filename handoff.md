@@ -33,12 +33,12 @@ SOLANA_RPC_URL=https://api.devnet.solana.com
 # BOT CREDENTIALS
 # ==========================================
 # Telegram Bot Token (from @BotFather)
-TELEGRAM_BOT_TOKEN=1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ
-TELEGRAM_BOT_USERNAME=PantaChatBot
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+TELEGRAM_BOT_USERNAME=your_bot_username
 
 # Discord Bot Token (from Discord Developer Portal)
-DISCORD_BOT_TOKEN=MTAyNDg5...
-DISCORD_CLIENT_ID=102489...
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+DISCORD_CLIENT_ID=your_discord_client_id_here
 
 # ==========================================
 # AI AGENT DRAFTER (Claude Sonnet 5.5 - claude-sonnet-5-5)
