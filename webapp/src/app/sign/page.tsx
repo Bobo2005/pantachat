@@ -389,6 +389,20 @@ function SigningFlow() {
           },
           "confirmed"
         );
+
+        // Notify backend with confirmed signature so it updates DB and dispatches bot confirmation message
+        try {
+          await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              signature: finalSig,
+              wallet: publicKey.toBase58(),
+            }),
+          });
+        } catch (notifyErr) {
+          console.warn("[Backend Submit Notify Warning]:", notifyErr);
+        }
       }
 
       if (typeof window !== "undefined" && sessionId) {

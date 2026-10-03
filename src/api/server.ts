@@ -9,6 +9,7 @@ import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
 import { getCreatorFeeClaimBuild } from "./panta/claims.js";
 import { reportTradeToPanta } from "../services/attribution-reporter.js";
 import { solanaConnection, waitForConfirmation, buildDevnetVersionedTransaction } from "../utils/solana.js";
+import { broadcastMarketCreatedNotification } from "../services/market-notifier.js";
 import { pantaGet } from "./panta/client.js";
 
 // =============================================================================
@@ -301,7 +302,7 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
       });
 
       // Save market in local DB
-      await saveMarket({
+      const createdMarket = await saveMarket({
         id: registered?.marketId || eventPda,
         title: payload.title,
         description: payload.description,
@@ -317,7 +318,21 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
         createdAt: Math.floor(Date.now() / 1000),
       }).catch((mktErr) => {
         console.warn(`[Submit API] Local market save warning:`, mktErr.message);
+        return null;
       });
+
+      // Dispatch real-time bot confirmation message into Telegram / Discord chat!
+      if (createdMarket) {
+        broadcastMarketCreatedNotification({
+          market: createdMarket,
+          signature: finalSig,
+          creatorPlatformId: session.platformUserId,
+          platform: session.platform,
+          chatId: session.chatId,
+        }).catch((notifyErr) => {
+          console.warn(`[Submit API] Bot confirmation notification warning:`, notifyErr.message);
+        });
+      }
     }
 
     // Mark session confirmed
