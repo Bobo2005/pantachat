@@ -39,9 +39,14 @@ const initialMarkets: LiveMarket[] = [
   },
 ];
 
+const CLOUD_CATALOG_ID = "ff808181a09d98f701a102a0f5c26d9c";
+const CLOUD_TRADES_ID = "ff808181a09d98f701a102a584e56da3";
+
 declare global {
   // eslint-disable-next-line no-var
   var __PANTA_MARKETS__: LiveMarket[] | undefined;
+  // eslint-disable-next-line no-var
+  var __PANTA_TRADES__: any[] | undefined;
 }
 
 if (!globalThis.__PANTA_MARKETS__) {
@@ -52,6 +57,30 @@ export function getAllLiveMarkets(): LiveMarket[] {
   return globalThis.__PANTA_MARKETS__ || initialMarkets;
 }
 
+/**
+ * Asynchronously loads live markets from cloud persistent store.
+ */
+export async function getAllLiveMarketsAsync(): Promise<LiveMarket[]> {
+  try {
+    const res = await fetch(`https://api.restful-api.dev/objects/${CLOUD_CATALOG_ID}`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json?.data?.markets) && json.data.markets.length > 0) {
+        globalThis.__PANTA_MARKETS__ = json.data.markets;
+        return json.data.markets;
+      }
+    }
+  } catch (err) {
+    console.warn("[Cloud Catalog Warning]:", err);
+  }
+  return getAllLiveMarkets();
+}
+
+/**
+ * Synchronous in-memory market registration with background cloud persistence.
+ */
 export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): LiveMarket {
   const existingList = getAllLiveMarkets();
   const id = market.id || `mkt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -87,5 +116,63 @@ export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): 
   };
 
   existingList.unshift(newEntry);
+
+  // Asynchronously persist to cloud store
+  fetch(`https://api.restful-api.dev/objects/${CLOUD_CATALOG_ID}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "PantaChat_Market_Catalog",
+      data: { markets: existingList },
+    }),
+  }).catch((err) => console.warn("[Cloud Market Save Warning]:", err));
+
   return newEntry;
 }
+
+/**
+ * Asynchronously loads user trades/positions from cloud store.
+ */
+export async function getUserTradesAsync(wallet?: string): Promise<any[]> {
+  try {
+    const res = await fetch(`https://api.restful-api.dev/objects/${CLOUD_TRADES_ID}`, {
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const allTrades = Array.isArray(json?.data?.trades) ? json.data.trades : [];
+      if (!wallet) return allTrades;
+      return allTrades.filter(
+        (t: any) =>
+          !t.wallet ||
+          t.wallet.toLowerCase().includes(wallet.toLowerCase().slice(0, 4)) ||
+          wallet.toLowerCase().includes(t.wallet.toLowerCase().slice(0, 4))
+      );
+    }
+  } catch (err) {
+    console.warn("[Cloud Trades Warning]:", err);
+  }
+  return [];
+}
+
+/**
+ * Records a user trade to the persistent cloud store.
+ */
+export async function addUserTradeAsync(trade: any): Promise<void> {
+  try {
+    const currentTrades = await getUserTradesAsync();
+    const newTrades = [trade, ...currentTrades.filter((t: any) => t.id !== trade.id)];
+
+    await fetch(`https://api.restful-api.dev/objects/${CLOUD_TRADES_ID}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "PantaChat_User_Trades",
+        data: { trades: newTrades },
+      }),
+    });
+  } catch (err) {
+    console.warn("[Cloud Add Trade Warning]:", err);
+  }
+}
+

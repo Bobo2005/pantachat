@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getUserTradesAsync } from "@/lib/markets";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const wallet = searchParams.get("wallet") || "";
 
-  const positions = wallet
-    ? [
+  let positions: any[] = [];
+  if (wallet) {
+    const cloudTrades = await getUserTradesAsync(wallet);
+    if (cloudTrades.length > 0) {
+      positions = cloudTrades;
+    } else {
+      positions = [
         {
           id: "pos_arsenal_yes",
           marketId: "mkt_arsenal_chelsea_1790951354",
@@ -20,8 +26,9 @@ export async function GET(req: NextRequest) {
           status: "open",
           isClaimed: false,
         },
-      ]
-    : [];
+      ];
+    }
+  }
 
   return NextResponse.json({
     wallet,

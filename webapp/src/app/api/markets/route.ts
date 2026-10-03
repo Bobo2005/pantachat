@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAllLiveMarkets } from "@/lib/markets";
+import { getAllLiveMarketsAsync } from "@/lib/markets";
 
 // =============================================================================
 // GET /api/markets
@@ -8,7 +8,7 @@ import { getAllLiveMarkets } from "@/lib/markets";
 
 export async function GET() {
   try {
-    const markets = getAllLiveMarkets();
+    const markets = await getAllLiveMarketsAsync();
 
     return NextResponse.json(
       {

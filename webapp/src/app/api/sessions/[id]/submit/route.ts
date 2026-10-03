@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addLiveMarket, getAllLiveMarkets, type LiveMarket } from "@/lib/markets";
+import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, type LiveMarket } from "@/lib/markets";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -66,6 +66,33 @@ export async function POST(
         existingMarket.volumeRaw = (existingMarket.volumeRaw || 0) + tradeAmount;
       }
 
+      const outcomeUpper = String(outcome || "yes").toUpperCase();
+      const outcomeEmoji = outcomeUpper === "YES" ? "🟢" : "🔴";
+      const explorerUrl = `https://explorer.solana.com/tx/${finalSig}?cluster=devnet`;
+
+      // Record trade and position into persistent cloud store
+      if (wallet) {
+        const price = existingMarket ? (outcomeUpper === "YES" ? existingMarket.yesPrice : existingMarket.noPrice) : 0.5;
+        const estShares = tradeAmount / (price || 0.5);
+        addUserTradeAsync({
+          id: `pos_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          marketId: targetMarketId,
+          marketTitle: targetTitle,
+          category: targetCategory,
+          outcome: outcomeUpper.toLowerCase() as "yes" | "no",
+          shares: Number(estShares.toFixed(2)),
+          costUsdc: tradeAmount,
+          currentValueUsdc: tradeAmount,
+          pnlUsdc: 0,
+          pnlPercent: 0,
+          status: "open",
+          isClaimed: false,
+          wallet,
+          txSignature: finalSig,
+          createdAt: Date.now(),
+        }).catch((err) => console.warn("[Persist Trade Warning]:", err));
+      }
+
       const traderUser = user || creatorPlatformId || creator || "";
       const shortWallet = formatShortWallet(wallet);
       const traderTag = traderUser ? (traderUser.startsWith("@") ? traderUser : `@${traderUser}`) : "";
@@ -73,10 +100,6 @@ export async function POST(
         traderTag && shortWallet
           ? `${traderTag} (\`${shortWallet}\`)`
           : traderTag || (shortWallet ? `\`${shortWallet}\`` : "Anonymous Trader");
-
-      const outcomeUpper = String(outcome || "yes").toUpperCase();
-      const outcomeEmoji = outcomeUpper === "YES" ? "🟢" : "🔴";
-      const explorerUrl = `https://explorer.solana.com/tx/${finalSig}?cluster=devnet`;
 
       console.log(`[Vercel API] Trade confirmed: ${traderDisplay} bet $${tradeAmount} on ${outcomeUpper} for "${targetTitle}"`);
 
