@@ -209,7 +209,13 @@ export async function initiateMarketCreationSession(
     expiresAt,
   });
 
-  const signUrl = `${config.WEBAPP_URL}/sign?session=${sessionId}`;
+  const queryParams = new URLSearchParams({
+    session: sessionId,
+    type: "create",
+    title: params.title,
+    category: params.category,
+  });
+  const signUrl = `${config.WEBAPP_URL}/sign?${queryParams.toString()}`;
 
   return {
     sessionId,

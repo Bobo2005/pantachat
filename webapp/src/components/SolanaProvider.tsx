@@ -5,6 +5,10 @@ import {
   ConnectionProvider,
   WalletProvider,
 } from "@solana/wallet-adapter-react";
+import {
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+} from "@solana/wallet-adapter-wallets";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -13,8 +17,14 @@ export const SOLANA_DEVNET_RPC =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.devnet.solana.com";
 
 export function SolanaProvider({ children }: { children: React.ReactNode }) {
-  // Modern Solana wallets (Phantom, Solflare, Backpack) support Wallet Standard natively
-  const wallets = useMemo(() => [], []);
+  // Explicitly register Phantom and Solflare adapters alongside Wallet Standard
+  const wallets = useMemo(
+    () => [
+      new PhantomWalletAdapter(),
+      new SolflareWalletAdapter(),
+    ],
+    []
+  );
 
   return (
     <ConnectionProvider endpoint={SOLANA_DEVNET_RPC}>

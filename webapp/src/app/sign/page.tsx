@@ -7,6 +7,12 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { VersionedTransaction } from "@solana/web3.js";
 import confetti from "canvas-confetti";
 import { useTelegram } from "@/components/TelegramProvider";
+import {
+  isMobileDevice,
+  isPhantomInjected,
+  openInPhantomApp,
+  openInSolflareApp,
+} from "@/utils/mobileWallet";
 
 // =============================================================================
 // Helper: Native Base64 / Uint8Array Converters
@@ -72,9 +78,11 @@ interface SessionDetails {
   transaction?: string; // base64
 }
 
-// Backend API Base URL
+// Backend API Base URL (Supports NEXT_PUBLIC_API_URL or NEXT_PUBLIC_BACKEND_URL)
 const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  "http://localhost:3001";
 
 // =============================================================================
 // Inner Signing Flow Component
@@ -83,6 +91,14 @@ const BACKEND_URL =
 function SigningFlow() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session") || searchParams.get("id");
+  const queryType = searchParams.get("type");
+  const queryTitle = searchParams.get("title");
+  const queryCategory = searchParams.get("category");
+  const queryOutcome = (searchParams.get("outcome") as "yes" | "no") || "yes";
+  const queryAmount = Number(searchParams.get("amount") || 20);
+
+  const isCreateSession =
+    sessionId?.startsWith("sess_create_") || queryType === "create";
 
   const { connected, publicKey, signTransaction } = useWallet();
   const { setVisible } = useWalletModal();
@@ -115,11 +131,11 @@ function SigningFlow() {
       if (!res.ok) {
         if (res.status === 410) {
           setIsStaleQuote(true);
-          setErrorMessage("This quote session has expired. Please re-quote.");
+          setErrorMessage("This quote session has expired. Please re-draft from chat.");
           setState("error");
           return;
         }
-        throw new Error(`Failed to load session (HTTP ${res.status})`);
+        throw new Error(`Failed to load session from server (HTTP ${res.status})`);
       }
 
       const data = await res.json();
@@ -138,32 +154,40 @@ function SigningFlow() {
       setState("quote");
     } catch (err: any) {
       console.warn("[Sign Page] Session fetch error:", err.message);
-      // Fallback preview session if backend offline during local preview
-      setSession({
-        id: sessionId,
-        type: "buy",
-        status: "pending",
-        payload: {
-          marketId: "mkt_preview",
-          outcome: "yes",
-          amountUsdc: 20,
-        },
-        market: {
-          id: "mkt_preview",
-          title: "Will Solana hit $300 before November 2026?",
-          category: "Crypto",
-          yesPrice: 0.65,
-          noPrice: 0.35,
-        },
-        quote: {
-          estimatedShares: 30.76,
-          feeUsdc: "0.10",
-          effectivePrice: 0.65,
-        },
-      });
-      setState("quote");
+
+      // Client-side fallback using URL query parameters if backend is unreachable
+      if (isCreateSession || queryTitle) {
+        setSession({
+          id: sessionId,
+          type: isCreateSession ? "create" : "buy",
+          status: "pending",
+          payload: {
+            title: queryTitle || "Drafted Prediction Market",
+            category: queryCategory || "Crypto",
+            outcome: queryOutcome,
+            amountUsdc: queryAmount,
+            cutoffAt: "2026-12-31T23:59:59.000Z",
+          },
+          market: {
+            id: sessionId,
+            title: queryTitle || "Drafted Prediction Market",
+            category: queryCategory || "Crypto",
+          },
+          quote: {
+            estimatedShares: 0,
+            feeUsdc: "50.00",
+            effectivePrice: 0.5,
+          },
+        });
+        setState("quote");
+      } else {
+        setErrorMessage(
+          `Unable to load session from backend (${BACKEND_URL}). Please verify your backend server is online.`
+        );
+        setState("error");
+      }
     }
-  }, [sessionId, publicKey]);
+  }, [sessionId, publicKey, isCreateSession, queryTitle, queryCategory, queryOutcome, queryAmount]);
 
   useEffect(() => {
     fetchSessionData();
@@ -203,7 +227,6 @@ function SigningFlow() {
     }
 
     try {
-      // Transition to Stage 2: Building Transaction
       setState("building");
 
       // Obtain base64 transaction from backend if not already pre-built
@@ -216,10 +239,11 @@ function SigningFlow() {
       }
 
       if (!base64Tx) {
-        throw new Error("Unable to assemble transaction payload from API.");
+        throw new Error(
+          "Transaction build is unavailable. Please check that your wallet is funded with Devnet SOL."
+        );
       }
 
-      // Transition to Stage 3: Prompting Wallet Signature
       setState("approving");
 
       const txBytes = base64ToUint8Array(base64Tx);
@@ -232,7 +256,6 @@ function SigningFlow() {
       const signedTx = await signTransaction(versionedTx);
       const signedBase64 = uint8ArrayToBase64(signedTx.serialize());
 
-      // Transition to Stage 4: Submitting to Solana RPC
       setState("confirming");
 
       const submitRes = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
@@ -249,7 +272,6 @@ function SigningFlow() {
         throw new Error(submitData.message || "Solana transaction confirmation timed out.");
       }
 
-      // Transition to Stage 5: Success!
       setTxSignature(submitData.signature);
       setState("success");
 
@@ -274,19 +296,34 @@ function SigningFlow() {
   // ---------------------------------------------------------------------------
   // Render: 5-State Visual Stepper Layout
   // ---------------------------------------------------------------------------
-  const outcome = session?.payload?.outcome || "yes";
-  const amountUsdc = session?.payload?.amountUsdc || 20;
+  const sessionType = session?.type || (isCreateSession ? "create" : "buy");
+  const isCreate = sessionType === "create";
+  const isClaim = sessionType === "claim" || sessionType === "claim_creator";
+
+  const displayTitle =
+    session?.payload?.title ||
+    session?.market?.title ||
+    queryTitle ||
+    "Prediction Market";
+  const displayCategory =
+    session?.payload?.category ||
+    session?.market?.category ||
+    queryCategory ||
+    "Crypto";
+
+  const outcome = session?.payload?.outcome || queryOutcome;
+  const amountUsdc = session?.payload?.amountUsdc || queryAmount;
   const isOutcomeYes = outcome.toLowerCase() === "yes";
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex items-center justify-center p-4">
-      <div className="w-full max-w-md panta-card p-5 border border-[#1e2638] shadow-2xl flex flex-col gap-5">
+    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex items-center justify-center p-4 font-sans selection:bg-[#38bdf8]/20 selection:text-white">
+      <div className="w-full max-w-md panta-card p-5 border border-[#1e2638] shadow-2xl flex flex-col gap-5 bg-[#121721] rounded-lg">
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-[#1e2638] pb-3 text-xs">
           <div className="flex items-center gap-2">
             <span className="font-heading font-bold text-sm text-white">PantaChat</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Devnet
+              Devnet 🟢
             </span>
           </div>
           <span className="text-slate-400 font-mono text-[11px]">Non-Custodial</span>
@@ -295,7 +332,7 @@ function SigningFlow() {
         {/* 5-State Visual Stepper Bar */}
         <div className="flex items-center justify-between gap-1 text-[10px] font-mono text-slate-400">
           <div className={`flex items-center gap-1 ${state === "quote" ? "text-[#38bdf8] font-bold" : "text-emerald-400"}`}>
-            <span>1. Quote</span>
+            <span>1. Review</span>
           </div>
           <span>→</span>
           <div className={`flex items-center gap-1 ${state === "building" ? "text-[#38bdf8] font-bold" : state === "approving" || state === "confirming" || state === "success" ? "text-emerald-400" : ""}`}>
@@ -316,12 +353,12 @@ function SigningFlow() {
         </div>
 
         {/* Stale Quote Alert Notice */}
-        {isOutcomeYes !== undefined && isStaleQuote && (
-          <div className="panta-card-subtle p-3 flex items-center justify-between text-xs border-amber-500/30 bg-amber-500/10 text-amber-300">
+        {isStaleQuote && !isCreate && (
+          <div className="panta-card-subtle p-3 flex items-center justify-between text-xs border-amber-500/30 bg-amber-500/10 text-amber-300 rounded">
             <span>⚠️ Price updated on bonding curve.</span>
             <button
               onClick={fetchSessionData}
-              className="text-xs font-semibold text-white underline hover:no-underline"
+              className="text-xs font-semibold text-white underline hover:no-underline cursor-pointer"
             >
               1-Tap Re-Quote
             </button>
@@ -335,98 +372,177 @@ function SigningFlow() {
           <div className="flex flex-col gap-4">
             {/* Market Title */}
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                {session?.market?.category || "PREDICTION MARKET"}
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#38bdf8]">
+                {isCreate ? `⚡ LAUNCH NEW PREDICTION • ${displayCategory}` : displayCategory}
               </span>
               <h2 className="font-heading font-semibold text-sm text-white leading-snug">
-                {session?.market?.title || session?.payload?.title || "Loading market statement..."}
+                {displayTitle}
               </h2>
             </div>
 
-            {/* Bet Summary Pill */}
-            <div className="panta-card-subtle p-3 flex items-center justify-between text-xs">
-              <span className="text-slate-400">Position Chosen</span>
-              <span
-                className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
-                  isOutcomeYes
-                    ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/30"
-                    : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/30"
-                }`}
-              >
-                {outcome.toUpperCase()} (${amountUsdc} USDC)
-              </span>
-            </div>
+            {/* Content for Market Creation */}
+            {isCreate ? (
+              <>
+                <div className="panta-card-subtle p-3 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Action Type</span>
+                  <span className="font-mono font-bold px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    CREATE PREDICTION MARKET
+                  </span>
+                </div>
 
-            {/* Real-Time Quote Details */}
-            <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">
-              <div className="flex justify-between text-slate-400">
-                <span>Est. Shares</span>
-                <span className="text-white font-medium">
-                  {session?.quote?.estimatedShares ? session.quote.estimatedShares.toFixed(2) : "30.76"}
-                </span>
+                <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Creation Deposit</span>
+                    <span className="text-emerald-400 font-bold">50 USDC (Devnet)</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Bonding Curve Royalty</span>
+                    <span className="text-cyan-400 font-medium">0.50% on all volume</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Graduation Threshold</span>
+                    <span className="text-purple-400 font-medium">$10,000 Volume</span>
+                  </div>
+                </div>
+              </>
+            ) : isClaim ? (
+              /* Content for Claiming */
+              <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">
+                <div className="flex justify-between text-slate-400">
+                  <span>Action</span>
+                  <span className="text-emerald-400 font-bold">Claim Winnings / Royalty</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Destination</span>
+                  <span className="text-white font-medium">
+                    {publicKey ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}` : "Connected Wallet"}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Effective Price</span>
-                <span className="text-white font-medium">
-                  ${session?.quote?.effectivePrice ? session.quote.effectivePrice.toFixed(2) : "0.65"}
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Max Slippage</span>
-                <span className="text-emerald-400">3.0% (Bonding Curve Protected)</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Network Protocol Fee</span>
-                <span className="text-white font-medium">${session?.quote?.feeUsdc || "0.10"} USDC</span>
-              </div>
-            </div>
+            ) : (
+              /* Content for Buy Order */
+              <>
+                <div className="panta-card-subtle p-3 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Position Chosen</span>
+                  <span
+                    className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
+                      isOutcomeYes
+                        ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/30"
+                        : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/30"
+                    }`}
+                  >
+                    {outcome.toUpperCase()} (${amountUsdc} USDC)
+                  </span>
+                </div>
 
-            {/* 90s TTL Indicator */}
+                <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Est. Shares</span>
+                    <span className="text-white font-medium">
+                      {session?.quote?.estimatedShares ? session.quote.estimatedShares.toFixed(2) : (amountUsdc / 0.5).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Effective Price</span>
+                    <span className="text-white font-medium">
+                      ${session?.quote?.effectivePrice ? session.quote.effectivePrice.toFixed(2) : "0.50"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Max Slippage</span>
+                    <span className="text-emerald-400">3.0% (Bonding Curve Protected)</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Network Protocol Fee</span>
+                    <span className="text-white font-medium">${session?.quote?.feeUsdc || "0.10"} USDC</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* TTL Indicator */}
             <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1">
               <span className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${countdown > 15 ? "bg-emerald-400" : "bg-amber-400 animate-ping"}`} />
-                <span>Quote locks in {countdown}s</span>
+                <span>Session active ({countdown}s)</span>
               </span>
-              <button onClick={fetchSessionData} className="text-[#38bdf8] hover:underline">
+              <button onClick={fetchSessionData} className="text-[#38bdf8] hover:underline cursor-pointer">
                 Refresh
               </button>
             </div>
 
-            {/* Primary Action Button */}
+            {/* Action Button */}
             {!connected ? (
-              <button
-                onClick={() => setVisible(true)}
-                className="w-full py-2.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold transition cursor-pointer"
-              >
-                Connect Phantom to Sign
-              </button>
+              isMobileDevice() && !isPhantomInjected() ? (
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => openInPhantomApp()}
+                    className="w-full py-2.5 rounded-md bg-[#ab9ff2] hover:bg-[#9785ec] text-black text-xs font-semibold font-mono transition cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-[#ab9ff2]/20"
+                  >
+                    <span>🟣</span>
+                    <span>{isCreate ? "Open & Launch in Phantom App" : "Open & Sign in Phantom App"}</span>
+                  </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => openInSolflareApp()}
+                      className="py-2 rounded-md bg-[#fc814a] hover:bg-[#e06d38] text-white text-xs font-semibold font-mono transition cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>🟠</span>
+                      <span>Solflare App</span>
+                    </button>
+
+                    <button
+                      onClick={() => setVisible(true)}
+                      className="py-2 rounded-md bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] text-slate-300 text-xs font-mono transition cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <span>📱</span>
+                      <span>MWA Adapter</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setVisible(true)}
+                  className="w-full py-2.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold font-mono transition cursor-pointer"
+                >
+                  {isCreate ? "Connect Phantom to Launch Market" : "Connect Phantom to Sign"}
+                </button>
+              )
             ) : (
               <button
                 onClick={handleSignAndSubmit}
-                disabled={state === "building" || isStaleQuote}
-                className={`w-full py-2.5 rounded-md text-xs font-semibold text-white transition cursor-pointer disabled:opacity-50 ${
-                  isOutcomeYes
-                    ? "bg-[#0284c7] hover:bg-[#0369a1]"
-                    : "bg-[#9333ea] hover:bg-[#7e22ce]"
-                }`}
+                disabled={state === "building"}
+                className="w-full py-2.5 rounded-md bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black text-xs font-semibold font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2"
               >
-                {state === "building" ? "Assembling Transaction..." : `Approve & Sign $${amountUsdc} ${outcome.toUpperCase()}`}
+                {state === "building" ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                    <span>Assembling Solana Transaction...</span>
+                  </>
+                ) : isCreate ? (
+                  "🚀 Confirm & Launch Market on Solana"
+                ) : isClaim ? (
+                  "💰 Claim USDC to Wallet"
+                ) : (
+                  `Sign & Confirm ${outcome.toUpperCase()} ($${amountUsdc} USDC)`
+                )}
               </button>
             )}
           </div>
         )}
 
         {/* ================================================================== */}
-        {/* Stage 3: Prompting Wallet Approval */}
+        {/* Stage 3: Approving in Wallet */}
         {/* ================================================================== */}
         {state === "approving" && (
-          <div className="py-8 flex flex-col items-center justify-center text-center gap-4">
+          <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
             <div className="w-12 h-12 rounded-full bg-[#181f2c] border border-[#1e2638] flex items-center justify-center text-xl animate-bounce">
-              👻
+              ✍️
             </div>
             <div className="flex flex-col gap-1">
-              <h3 className="font-heading font-semibold text-white text-sm">Approve in Wallet</h3>
-              <p className="text-xs text-slate-400 max-w-xs">
+              <h3 className="font-heading font-semibold text-base text-white">Approve in Wallet</h3>
+              <p className="text-xs text-slate-400 font-mono">
                 Please approve the transaction prompt in your Phantom or Solflare wallet window.
               </p>
             </div>
@@ -434,79 +550,81 @@ function SigningFlow() {
         )}
 
         {/* ================================================================== */}
-        {/* Stage 4: Confirming on Solana RPC */}
+        {/* Stage 4: Confirming on Solana */}
         {/* ================================================================== */}
         {state === "confirming" && (
-          <div className="py-8 flex flex-col items-center justify-center text-center gap-4">
-            <div className="w-10 h-10 border-2 border-[#1e2638] border-t-[#38bdf8] rounded-full animate-spin" />
+          <div className="flex flex-col items-center justify-center py-8 gap-4 text-center">
+            <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
             <div className="flex flex-col gap-1">
-              <h3 className="font-heading font-semibold text-white text-sm">Confirming on Solana</h3>
+              <h3 className="font-heading font-semibold text-base text-white">Confirming on Solana Devnet</h3>
               <p className="text-xs text-slate-400 font-mono">
-                Awaiting commitment 'confirmed' on Devnet...
+                Awaiting sub-second commitment and trade attribution...
               </p>
             </div>
           </div>
         )}
 
         {/* ================================================================== */}
-        {/* Stage 5: Success Celebration */}
+        {/* Stage 5: Success */}
         {/* ================================================================== */}
         {state === "success" && (
-          <div className="py-4 flex flex-col gap-4 text-center items-center">
-            <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-xl">
+          <div className="flex flex-col items-center justify-center py-6 gap-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-2xl">
               ✓
             </div>
             <div className="flex flex-col gap-1">
-              <h3 className="font-heading font-bold text-white text-base">Trade Placed Successfully!</h3>
-              <p className="text-xs text-slate-400">
-                Your prediction has been recorded non-custodially on Solana.
+              <h3 className="font-heading font-bold text-lg text-white">
+                {isCreate ? "Market Launched Successfully!" : "Order Confirmed!"}
+              </h3>
+              <p className="text-xs text-slate-400 font-mono">
+                Your transaction has been confirmed on the Solana blockchain.
               </p>
             </div>
 
             {txSignature && (
-              <div className="w-full bg-[#0b0e14] p-2.5 rounded border border-[#1e2638] text-[11px] font-mono flex flex-col gap-1 text-left">
-                <span className="text-slate-500">Transaction Signature</span>
-                <span className="text-slate-300 truncate">{txSignature}</span>
-                <a
-                  href={`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[#38bdf8] hover:underline pt-1"
-                >
-                  View on Solana Explorer ↗
-                </a>
-              </div>
+              <a
+                href={`https://explorer.solana.com/tx/${txSignature}?cluster=devnet`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-mono text-[#38bdf8] hover:underline"
+              >
+                View on Solana Explorer ↗
+              </a>
             )}
 
-            <button
-              onClick={() => {
-                if (isTelegram) {
-                  closeTelegram();
-                } else {
-                  window.location.href = "/";
-                }
-              }}
-              className="w-full py-2.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold transition cursor-pointer"
-            >
-              {isTelegram ? "Done • Return to Telegram" : "Return to Dashboard"}
-            </button>
+            <div className="w-full pt-3">
+              {isTelegram ? (
+                <button
+                  onClick={closeTelegram}
+                  className="w-full py-2.5 rounded-md bg-[#181f2c] hover:bg-[#20293a] text-white text-xs font-mono transition"
+                >
+                  Return to Telegram Chat
+                </button>
+              ) : (
+                <a
+                  href="/"
+                  className="block w-full py-2.5 rounded-md bg-[#181f2c] hover:bg-[#20293a] text-white text-xs font-mono text-center transition"
+                >
+                  Return to Explorer
+                </a>
+              )}
+            </div>
           </div>
         )}
 
         {/* Error State */}
         {state === "error" && (
-          <div className="py-4 flex flex-col gap-4 text-center items-center">
-            <div className="w-10 h-10 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center justify-center text-lg">
+          <div className="flex flex-col items-center justify-center py-6 gap-3 text-center">
+            <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-lg">
               ✕
             </div>
             <div className="flex flex-col gap-1">
-              <h3 className="font-heading font-semibold text-white text-sm">Action Notice</h3>
-              <p className="text-xs text-slate-400 max-w-xs">{errorMessage}</p>
+              <h3 className="font-heading font-semibold text-sm text-white">Action Failed</h3>
+              <p className="text-xs text-rose-300 font-mono max-w-xs">{errorMessage}</p>
             </div>
-
             <button
               onClick={fetchSessionData}
-              className="w-full py-2 rounded-md bg-[#121721] hover:bg-[#181f2c] border border-[#1e2638] text-xs font-semibold text-white transition cursor-pointer"
+              className="mt-2 px-4 py-1.5 rounded bg-[#181f2c] hover:bg-[#20293a] text-white text-xs font-mono transition cursor-pointer"
             >
               Try Again
             </button>
@@ -517,16 +635,12 @@ function SigningFlow() {
   );
 }
 
-// =============================================================================
-// Export Wrapped in Suspense (App Router Requirement)
-// =============================================================================
-
 export default function SignPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center text-xs font-mono text-slate-500">
-          Loading signing sheet...
+        <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-[#38bdf8] border-t-transparent rounded-full animate-spin" />
         </div>
       }
     >
