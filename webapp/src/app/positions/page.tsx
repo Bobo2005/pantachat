@@ -34,7 +34,7 @@ export default function PositionsPage() {
 
     setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
       const res = await fetch(`${apiUrl}/api/positions?wallet=${publicKey.toBase58()}`, {
         cache: "no-store",
       });

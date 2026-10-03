@@ -232,6 +232,10 @@ export async function initiateMarketCreationSession(
     type: "create",
     title: params.title,
     category: params.category,
+    chatId: params.chatId,
+    platform: params.platform,
+    creator: params.platformUserId,
+    desc: params.description || "",
   });
   const signUrl = `${config.WEBAPP_URL}/sign?${queryParams.toString()}`;
 

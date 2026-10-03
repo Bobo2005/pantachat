@@ -42,11 +42,13 @@ export default function MarketExplorer() {
   const fetchMarkets = async () => {
     setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
       const res = await fetch(`${apiUrl}/api/markets`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
-        const list = Array.isArray(data?.markets) ? data.markets : [];
+        const list = Array.isArray(data?.markets)
+          ? data.markets
+          : (Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []));
         const parsed: MarketItem[] = list.map((m: any) => {
           const yesP = typeof m.yesPrice === "number" ? m.yesPrice : 0.5;
           const noP = typeof m.noPrice === "number" ? m.noPrice : 0.5;

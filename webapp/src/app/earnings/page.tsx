@@ -28,7 +28,7 @@ export default function CreatorEarningsPage() {
   const fetchEarnings = async () => {
     setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
       const walletQuery = publicKey ? `?wallet=${publicKey.toBase58()}` : "";
       const res = await fetch(`${apiUrl}/api/earnings${walletQuery}`, { cache: "no-store" });
       if (res.ok) {

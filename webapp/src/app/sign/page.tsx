@@ -59,6 +59,9 @@ interface SessionDetails {
   type: "buy" | "create" | "claim" | "claim_creator";
   status: string;
   expiresAt?: number;
+  platform?: string;
+  platformUserId?: string;
+  chatId?: string;
   payload: {
     marketId?: string;
     outcome?: "yes" | "no";
@@ -67,6 +70,7 @@ interface SessionDetails {
     description?: string;
     category?: string;
     cutoffAt?: string;
+    chatId?: string;
   };
   market?: {
     id: string;
@@ -88,7 +92,7 @@ interface SessionDetails {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
-  "http://localhost:3001";
+  "";
 
 // =============================================================================
 // Inner Signing Flow Component
@@ -102,6 +106,11 @@ function SigningFlow() {
   const queryCategory = searchParams.get("category");
   const queryOutcome = (searchParams.get("outcome") as "yes" | "no") || "yes";
   const queryAmount = Number(searchParams.get("amount") || 20);
+
+  const queryChatId = searchParams.get("chatId") || searchParams.get("chat_id");
+  const queryPlatform = searchParams.get("platform") || "telegram";
+  const queryCreator = searchParams.get("creator") || searchParams.get("user");
+  const queryDesc = searchParams.get("desc") || searchParams.get("description");
 
   const isCreateSession =
     sessionId?.startsWith("sess_create_") || queryType === "create";
@@ -349,6 +358,12 @@ function SigningFlow() {
           body: JSON.stringify({
             signedTx: signedBase64,
             wallet: publicKey.toBase58(),
+            chatId: (session?.payload as any)?.chatId || queryChatId,
+            platform: session?.platform || queryPlatform,
+            creatorPlatformId: session?.platformUserId || queryCreator,
+            title: session?.payload?.title || queryTitle,
+            description: session?.payload?.description || queryDesc,
+            category: session?.payload?.category || queryCategory,
           }),
         });
 
@@ -398,6 +413,12 @@ function SigningFlow() {
             body: JSON.stringify({
               signature: finalSig,
               wallet: publicKey.toBase58(),
+              chatId: (session?.payload as any)?.chatId || queryChatId,
+              platform: session?.platform || queryPlatform,
+              creatorPlatformId: session?.platformUserId || queryCreator,
+              title: session?.payload?.title || queryTitle,
+              description: session?.payload?.description || queryDesc,
+              category: session?.payload?.category || queryCategory,
             }),
           });
         } catch (notifyErr) {
