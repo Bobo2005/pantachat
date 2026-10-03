@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type Express } from "express";
 import cors from "cors";
 import { config } from "../config.js";
-import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets, getMarketsByCreator } from "../db/queries.js";
+import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets, getMarketsByCreator, findDuplicateMarket } from "../db/queries.js";
 import { getMarketById, getMarkets } from "./panta/markets.js";
 import { getPrimaryOrderQuote, getPrimaryOrderBuild } from "./panta/trading.js";
 import { getCreateBuild, registerMarket } from "./panta/create.js";
@@ -93,6 +93,25 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
 
     // 2. Create Market Sessions
     else if (session.type === "create") {
+      const duplicate = await findDuplicateMarket(payload.title);
+      if (duplicate || session.status === "confirmed") {
+        return res.json({
+          session: {
+            id: session.id,
+            type: session.type,
+            status: "confirmed",
+            platformUserId: session.platformUserId,
+            platform: session.platform,
+            createdAt: session.createdAt,
+            expiresAt: session.expiresAt,
+          },
+          payload,
+          alreadyLaunched: true,
+          existingMarket: duplicate,
+          transaction: "",
+        });
+      }
+
       if (activeWallet) {
         try {
           const build = await getCreateBuild({
@@ -260,6 +279,16 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
 
     // 2. Post-Confirmation for Market Creation
     else if (session.type === "create") {
+      const duplicate = await findDuplicateMarket(payload.title);
+      if (duplicate) {
+        await updateSessionStatus(session.id, "confirmed");
+        return res.status(409).json({
+          error: "MARKET_ALREADY_EXISTS",
+          message: `A market with the title "${duplicate.title}" has already been launched. You cannot launch the same market twice.`,
+          marketId: duplicate.id,
+        });
+      }
+
       const eventPda = payload.expectedEventPda || payload.eventPda || `pda_${Date.now()}`;
 
       // Register market on Panta API

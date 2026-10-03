@@ -1,7 +1,7 @@
 import { type Telegraf, type Context } from "telegraf";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
-import { initiateMarketCreationSession } from "../../api/panta/create.js";
+import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
 import { getMarketById } from "../../api/panta/markets.js";
 import { buildMarketCardText, getPresetBuyButtons } from "../common/card-builder.js";
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
@@ -175,6 +175,34 @@ export function registerTelegramCommands(bot: Telegraf): void {
         },
       });
     } catch (err: any) {
+      if (err instanceof DuplicateMarketError) {
+        const m = err.existingMarket;
+        const duplicateText = [
+          `⚠️ *Market Already Exists!*`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `An active prediction market for this question is already live:`,
+          `*${m.title}*`,
+          ``,
+          `📊 *Current Odds:* YES ${(m.yesPrice * 100).toFixed(0)}% • NO ${(m.noPrice * 100).toFixed(0)}%`,
+          `📈 *Volume:* $${m.volumeUsdc.toFixed(2)} USDC`,
+          ``,
+          `_You cannot launch the same market twice, but you can trade on it right now!_`,
+        ].join("\n");
+
+        return ctx.reply(duplicateText, {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: `Trade YES ($${m.yesPrice.toFixed(2)})`, callback_data: `buy_${m.id}_yes_20` },
+                { text: `Trade NO ($${m.noPrice.toFixed(2)})`, callback_data: `buy_${m.id}_no_20` },
+              ],
+              [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
+            ],
+          },
+        });
+      }
+
       console.error("[Telegram /market Error]:", err);
       return ctx.reply(`❌ Failed to draft market: ${err.message || "Unknown error"}`);
     }

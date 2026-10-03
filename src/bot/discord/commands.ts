@@ -16,7 +16,7 @@ import {
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { config } from "../../config.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
-import { initiateMarketCreationSession } from "../../api/panta/create.js";
+import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
 import { getMarketById } from "../../api/panta/markets.js";
 import { buildDiscordMarketCard } from "./embeds.js";
 import { registerDiscordInteractions } from "./interactions.js";
@@ -176,6 +176,38 @@ async function processBanterDraft(
       components: [row],
     });
   } catch (err: any) {
+    if (err instanceof DuplicateMarketError) {
+      const m = err.existingMarket;
+      const duplicateMsg = [
+        `⚠️ **Market Already Exists!**`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `An active prediction market for this question is already live:`,
+        `**${m.title}**`,
+        ``,
+        `📊 **Current Odds:** YES ${(m.yesPrice * 100).toFixed(0)}% • NO ${(m.noPrice * 100).toFixed(0)}%`,
+        `📈 **Volume:** $${m.volumeUsdc.toFixed(2)} USDC`,
+        ``,
+        `*You cannot launch the same market twice, but you can trade on it right now!*`,
+      ].join("\n");
+
+      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`buy_${m.id}_yes_20`)
+          .setLabel(`Trade YES ($${m.yesPrice.toFixed(2)})`)
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`buy_${m.id}_no_20`)
+          .setLabel(`Trade NO ($${m.noPrice.toFixed(2)})`)
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await interaction.editReply({
+        content: duplicateMsg,
+        components: [row],
+      });
+      return;
+    }
+
     console.error("[Discord AI Drafter Error]:", err);
     await interaction.editReply({
       content: `❌ **Failed to draft market:** ${err.message || "Unknown error"}`,

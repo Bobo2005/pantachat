@@ -146,6 +146,29 @@ function SigningFlow() {
       }
 
       const data = await res.json();
+
+      // Check if session or market has already been launched/confirmed
+      const alreadyConfirmedSig =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
+          : null;
+
+      if (data.session?.status === "confirmed" || data.alreadyLaunched || alreadyConfirmedSig) {
+        if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
+        setSession({
+          id: data.session.id,
+          type: data.session.type,
+          status: "confirmed",
+          expiresAt: data.session.expiresAt,
+          payload: data.payload || {},
+          market: data.market || data.existingMarket,
+          quote: data.quote,
+          transaction: "",
+        });
+        setState("success");
+        return;
+      }
+
       setSession({
         id: data.session.id,
         type: data.session.type,
@@ -161,6 +184,18 @@ function SigningFlow() {
       setState("quote");
     } catch (err: any) {
       console.warn("[Sign Page] Session fetch error:", err.message);
+
+      // Check if this market was already confirmed locally
+      const alreadyConfirmedSig =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
+          : null;
+
+      if (alreadyConfirmedSig) {
+        setTxSignature(alreadyConfirmedSig);
+        setState("success");
+        return;
+      }
 
       // Client-side fallback using URL query parameters if backend is unreachable
       if (isCreateSession || queryTitle) {
@@ -225,6 +260,18 @@ function SigningFlow() {
   const handleSignAndSubmit = async () => {
     if (!connected || !publicKey) {
       setVisible(true);
+      return;
+    }
+
+    // Duplicate Launch Guard: prevent signing if already confirmed
+    const alreadyConfirmedSig =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
+        : null;
+
+    if (alreadyConfirmedSig || session?.status === "confirmed") {
+      if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
+      setState("success");
       return;
     }
 
@@ -305,13 +352,23 @@ function SigningFlow() {
           }),
         });
 
+        if (submitRes.status === 409) {
+          const conflictData = await submitRes.json().catch(() => ({}));
+          throw new Error(
+            conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
+          );
+        }
+
         if (submitRes.ok) {
           const submitData = await submitRes.json();
           if (submitData.success && submitData.signature) {
             finalSig = submitData.signature;
           }
         }
-      } catch (submitErr) {
+      } catch (submitErr: any) {
+        if (submitErr.message?.includes("already been launched")) {
+          throw submitErr;
+        }
         console.warn("[Backend Submit Fallback]: Submitting directly to Solana Devnet RPC from client", submitErr);
       }
 
@@ -332,6 +389,10 @@ function SigningFlow() {
           },
           "confirmed"
         );
+      }
+
+      if (typeof window !== "undefined" && sessionId) {
+        sessionStorage.setItem(`panta_confirmed_${sessionId}`, finalSig);
       }
 
       setTxSignature(finalSig);

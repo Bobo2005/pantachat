@@ -1,10 +1,22 @@
 import { pantaPost } from "./client.js";
-import { createSession } from "../../db/queries.js";
+import { createSession, findDuplicateMarket } from "../../db/queries.js";
+import { type Market } from "../../db/schema.js";
 import { config } from "../../config.js";
 
 // =============================================================================
 // Interfaces & Types
 // =============================================================================
+
+export class DuplicateMarketError extends Error {
+  public readonly existingMarket: Market;
+
+  constructor(existingMarket: Market) {
+    super(`An active prediction market for "${existingMarket.title}" is already live.`);
+    this.name = "DuplicateMarketError";
+    this.existingMarket = existingMarket;
+    Object.setPrototypeOf(this, DuplicateMarketError.prototype);
+  }
+}
 
 export interface CreateQuoteParams {
   title: string;
@@ -185,6 +197,12 @@ export async function registerMarket(params: RegisterMarketParams): Promise<Regi
 export async function initiateMarketCreationSession(
   params: InitiateCreationSessionParams
 ): Promise<{ sessionId: string; signUrl: string; expiresAt: number }> {
+  // Prevent users from launching the same active prediction market twice
+  const existing = await findDuplicateMarket(params.title);
+  if (existing) {
+    throw new DuplicateMarketError(existing);
+  }
+
   const sessionId = `sess_create_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + 600; // 10 minutes TTL

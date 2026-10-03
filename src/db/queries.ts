@@ -126,6 +126,31 @@ export async function getMarketsByCreator(creatorPlatformId: string): Promise<Ma
     .orderBy(desc(markets.createdAt));
 }
 
+/**
+ * Normalizes a market title for deduplication comparison.
+ */
+export function normalizeMarketTitle(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[?!.,;:'"“”’]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Searches for an existing active market with the same or equivalent normalized question/title.
+ * Prevents users from launching the same prediction market multiple times.
+ */
+export async function findDuplicateMarket(title: string): Promise<Market | undefined> {
+  const normalizedTarget = normalizeMarketTitle(title);
+  if (!normalizedTarget) return undefined;
+
+  const activeMarkets = await getActiveMarkets();
+  return activeMarkets.find((m) => {
+    return normalizeMarketTitle(m.title) === normalizedTarget;
+  });
+}
+
 // =============================================================================
 // Trade Queries
 // =============================================================================
