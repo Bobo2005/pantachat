@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Navbar from "@/components/Navbar";
+import { getAllLiveMarkets } from "@/lib/markets";
 
 // =============================================================================
 // Market Data Interfaces
@@ -25,9 +26,36 @@ export interface MarketItem {
 
 const CATEGORIES = ["All", "Crypto", "Sports", "Stocks", "Macroeconomics", "Pop Culture"];
 
+function formatMarketEntry(m: any): MarketItem {
+  const yesP = typeof m.yesPrice === "number" ? m.yesPrice : 0.5;
+  const noP = typeof m.noPrice === "number" ? m.noPrice : 0.5;
+  const yesPct = typeof m.yesPercent === "number" ? m.yesPercent : Math.round(yesP * 100);
+  const noPct = typeof m.noPercent === "number" ? m.noPercent : Math.round(noP * 100);
+  const volRaw = typeof m.volumeUsdc === "number" ? m.volumeUsdc : (m.volumeRaw || 0);
+
+  return {
+    id: String(m.id),
+    category: (m.category as any) || "Crypto",
+    timestamp: m.createdAt || "Recent",
+    title: m.title || "Prediction Market",
+    yesPercent: yesPct,
+    noPercent: noPct,
+    yesPrice: yesP,
+    noPrice: noP,
+    volume: `$${volRaw.toLocaleString()} VOL`,
+    volumeRaw: volRaw,
+    creator: m.creator || "PantaChat",
+    phase: (m.phase as any) || "primary",
+    description: m.description,
+  };
+}
+
 export default function MarketExplorer() {
-  const [markets, setMarkets] = useState<MarketItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Pre-seed with live markets so page renders markets instantly on first load
+  const [markets, setMarkets] = useState<MarketItem[]>(() =>
+    getAllLiveMarkets().map(formatMarketEntry)
+  );
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [chartMode, setChartMode] = useState<"price" | "volume">("price");
@@ -40,44 +68,19 @@ export default function MarketExplorer() {
 
   // Fetch Real Dynamic Markets from Backend / Panta Protocol
   const fetchMarkets = async () => {
-    setIsLoading(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      const res = await fetch(`${apiUrl}/api/markets`, { cache: "no-store" });
+      const res = await fetch("/api/markets", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data?.markets)
           ? data.markets
           : (Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []));
-        const parsed: MarketItem[] = list.map((m: any) => {
-          const yesP = typeof m.yesPrice === "number" ? m.yesPrice : 0.5;
-          const noP = typeof m.noPrice === "number" ? m.noPrice : 0.5;
-          const yesPct = typeof m.yesPercent === "number" ? m.yesPercent : Math.round(yesP * 100);
-          const noPct = typeof m.noPercent === "number" ? m.noPercent : Math.round(noP * 100);
-          const volRaw = typeof m.volumeUsdc === "number" ? m.volumeUsdc : 0;
-
-          return {
-            id: String(m.id),
-            category: (m.category as any) || "Crypto",
-            timestamp: m.createdAt || "Recent",
-            title: m.title || "Prediction Market",
-            yesPercent: yesPct,
-            noPercent: noPct,
-            yesPrice: yesP,
-            noPrice: noP,
-            volume: `$${volRaw.toLocaleString()} VOL`,
-            volumeRaw: volRaw,
-            creator: m.creator || "PantaChat",
-            phase: (m.phase as any) || "primary",
-            description: m.description,
-          };
-        });
-        setMarkets(parsed);
+        if (list.length > 0) {
+          setMarkets(list.map(formatMarketEntry));
+        }
       }
     } catch (err) {
       console.warn("Could not load dynamic markets from backend:", err);
-    } finally {
-      setIsLoading(false);
     }
   };
 
