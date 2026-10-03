@@ -391,19 +391,33 @@ function SigningFlow() {
       if (!finalSig) {
         const rawTx = signedTx.serialize();
         finalSig = await connection.sendRawTransaction(rawTx, {
-          skipPreflight: false,
-          maxRetries: 3,
+          skipPreflight: true,
+          maxRetries: 5,
         });
 
-        const latestBh = await connection.getLatestBlockhash("confirmed");
-        await connection.confirmTransaction(
-          {
-            signature: finalSig,
-            blockhash: latestBh.blockhash,
-            lastValidBlockHeight: latestBh.lastValidBlockHeight,
-          },
-          "confirmed"
-        );
+        try {
+          const latestBh = await connection.getLatestBlockhash("confirmed");
+          await connection.confirmTransaction(
+            {
+              signature: finalSig,
+              blockhash: latestBh.blockhash,
+              lastValidBlockHeight: latestBh.lastValidBlockHeight,
+            },
+            "confirmed"
+          );
+        } catch (confirmErr) {
+          console.warn("[Confirm Notice]: Checking signature status directly...", confirmErr);
+          for (let i = 0; i < 8; i++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            const status = await connection.getSignatureStatus(finalSig);
+            if (
+              status.value?.confirmationStatus === "confirmed" ||
+              status.value?.confirmationStatus === "finalized"
+            ) {
+              break;
+            }
+          }
+        }
 
         // Notify backend with confirmed signature so it updates DB and dispatches bot confirmation message
         try {

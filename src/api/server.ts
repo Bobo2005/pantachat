@@ -221,8 +221,8 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
     if (signedTx && !finalSig) {
       const txBuffer = Buffer.from(signedTx, "base64");
       finalSig = await solanaConnection.sendRawTransaction(txBuffer, {
-        skipPreflight: false,
-        preflightCommitment: "confirmed",
+        skipPreflight: true,
+        maxRetries: 5,
       });
     }
 
