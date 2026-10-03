@@ -20,7 +20,24 @@ export interface LiveMarket {
 }
 
 // Global in-memory list (persists across requests within lambda instance lifecycle)
-const initialMarkets: LiveMarket[] = [];
+const initialMarkets: LiveMarket[] = [
+  {
+    id: "mkt_arsenal_chelsea_1790951354",
+    title: "Will Arsenal beat Chelsea in the Premier League on October 18, 2026?",
+    category: "Sports",
+    description:
+      "Resolves YES if Arsenal win the Premier League match against Chelsea scheduled for October 18, 2026, with the result decided after 90 minutes plus stoppage time, per the official Premier League match report. A draw or Chelsea win resolves NO.",
+    creator: "@Bobotrades",
+    phase: "primary",
+    yesPrice: 0.5,
+    noPrice: 0.5,
+    volumeUsdc: 250,
+    volumeRaw: 250,
+    createdAt: "Just now",
+    cutoffAt: "2026-10-18T23:59:59.000Z",
+    chatId: "-1004471636999",
+  },
+];
 
 declare global {
   // eslint-disable-next-line no-var
