@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Navbar from "@/components/Navbar";
 import WalletButton from "@/components/WalletButton";
@@ -21,55 +21,37 @@ export interface PositionItem {
   claimableUsdc?: number;
 }
 
-const DEMO_POSITIONS: PositionItem[] = [
-  {
-    id: "pos_1",
-    marketId: "mkt_sol_eth",
-    marketTitle: "Will Solana (SOL) flip Ethereum in market cap before 2027?",
-    category: "Crypto",
-    outcome: "yes",
-    shares: 31.25,
-    costUsdc: 20.0,
-    currentValueUsdc: 22.4,
-    pnlUsdc: 2.4,
-    pnlPercent: 12.0,
-    status: "open",
-    isClaimed: false,
-  },
-  {
-    id: "pos_2",
-    marketId: "mkt_bbn_female",
-    marketTitle: "Will a female housemate win Big Brother Naija Season 11?",
-    category: "Pop Culture",
-    outcome: "yes",
-    shares: 40.0,
-    costUsdc: 20.0,
-    currentValueUsdc: 40.0,
-    pnlUsdc: 20.0,
-    pnlPercent: 100.0,
-    status: "won",
-    isClaimed: false,
-    claimableUsdc: 40.0,
-  },
-  {
-    id: "pos_3",
-    marketId: "mkt_fed_cuts",
-    marketTitle: "Will the US Federal Reserve cut rates by 50bps at the next FOMC?",
-    category: "Stocks",
-    outcome: "no",
-    shares: 16.12,
-    costUsdc: 10.0,
-    currentValueUsdc: 11.2,
-    pnlUsdc: 1.2,
-    pnlPercent: 12.0,
-    status: "open",
-    isClaimed: false,
-  },
-];
-
 export default function PositionsPage() {
   const { connected, publicKey } = useWallet();
-  const [positions, setPositions] = useState<PositionItem[]>(DEMO_POSITIONS);
+  const [positions, setPositions] = useState<PositionItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchPositions = async () => {
+    if (!publicKey) {
+      setPositions([]);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+      const res = await fetch(`${apiUrl}/api/positions?wallet=${publicKey.toBase58()}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPositions(Array.isArray(data?.positions) ? data.positions : []);
+      }
+    } catch (err) {
+      console.warn("Could not fetch wallet positions:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPositions();
+  }, [publicKey, connected]);
 
   const claimableList = positions.filter((p) => p.status === "won" && !p.isClaimed);
   const totalClaimableUsdc = claimableList.reduce((acc, p) => acc + (p.claimableUsdc || 0), 0);
@@ -99,118 +81,181 @@ export default function PositionsPage() {
               <span className="text-slate-400">Portfolio Value:</span>
               <span className="font-bold text-white">${totalPortfolioValue.toFixed(2)} USDC</span>
             </div>
-            {!connected && <WalletButton />}
+            {connected && (
+              <button
+                onClick={fetchPositions}
+                className="px-2.5 py-1.5 rounded bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] text-xs font-mono text-slate-300 transition cursor-pointer"
+                title="Refresh Positions"
+              >
+                🔄
+              </button>
+            )}
           </div>
         </div>
 
-        {/* ================================================================== */}
-        {/* Highlight Section: Claimable Winnings */}
-        {/* ================================================================== */}
-        {claimableList.length > 0 && (
-          <div className="panta-card p-5 border-emerald-500/30 bg-emerald-950/10 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl shrink-0">
+        {/* Claimable Highlight Callout */}
+        {totalClaimableUsdc > 0 && (
+          <div className="border border-emerald-500/30 bg-[#121721] rounded-lg p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-lg font-bold shrink-0">
                 💰
               </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-heading font-semibold text-emerald-300 text-sm">
-                  You Have Claimable Prediction Winnings!
-                </span>
-                <p className="text-xs text-slate-400">
-                  {claimableList.length} resolved market payout ready to claim on Solana Devnet.
-                </p>
+              <div>
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>Winnings Ready to Claim</span>
+                  <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Resolved Winner
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 font-mono mt-0.5">
+                  You have <span className="text-white font-bold">${totalClaimableUsdc.toFixed(2)} USDC</span> in claimable winnings waiting on Solana.
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
-              <span className="font-mono text-base font-bold text-emerald-400">
-                +${totalClaimableUsdc.toFixed(2)} USDC
-              </span>
-              <button
-                onClick={() => handleClaim(claimableList[0].marketId)}
-                className="px-4 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-semibold font-mono transition shadow-[0_0_20px_rgba(16,185,129,0.3)] cursor-pointer"
-              >
-                Claim Payout USDC ↗
-              </button>
-            </div>
+            <button
+              onClick={() => handleClaim(claimableList[0].marketId)}
+              className="px-5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs transition shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer font-mono"
+            >
+              <span>[ Claim USDC ]</span>
+            </button>
           </div>
         )}
 
-        {/* ================================================================== */}
-        {/* Table of Active Holdings */}
-        {/* ================================================================== */}
-        <div className="panta-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-[#1e2638] flex items-center justify-between text-xs">
-            <span className="font-semibold text-white uppercase tracking-wider font-mono">
-              Active Holdings ({positions.length})
-            </span>
-            <span className="text-slate-500 font-mono text-[11px]">Auto-Synced with Solana RPC</span>
+        {/* Content States */}
+        {!connected ? (
+          <div className="panta-card p-12 text-center flex flex-col items-center justify-center gap-4 bg-[#121721] rounded-lg border border-[#1e2638]">
+            <div className="w-12 h-12 rounded-full bg-[#181f2c] border border-[#1e2638] flex items-center justify-center text-xl">
+              👛
+            </div>
+            <div className="flex flex-col gap-1 max-w-sm">
+              <h3 className="text-white font-heading font-semibold text-base">Connect Your Solana Wallet</h3>
+              <p className="text-xs text-slate-400 font-mono">
+                Connect your Phantom or Solflare wallet to view your active predictions and claim your payouts.
+              </p>
+            </div>
+            <div className="pt-2">
+              <WalletButton />
+            </div>
           </div>
+        ) : isLoading ? (
+          <div className="panta-card p-12 flex flex-col items-center justify-center gap-3 bg-[#121721] rounded-lg border border-[#1e2638]">
+            <div className="w-6 h-6 border-2 border-[#38bdf8] border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-xs font-mono text-slate-400">Loading wallet positions from Solana...</span>
+          </div>
+        ) : positions.length === 0 ? (
+          <div className="panta-card p-12 text-center flex flex-col items-center justify-center gap-4 bg-[#121721] rounded-lg border border-[#1e2638]">
+            <div className="w-12 h-12 rounded-full bg-[#181f2c] border border-[#1e2638] flex items-center justify-center text-xl">
+              📊
+            </div>
+            <div className="flex flex-col gap-1 max-w-sm">
+              <h3 className="text-white font-heading font-semibold text-base">No Active Positions Found</h3>
+              <p className="text-xs text-slate-400 font-mono">
+                You haven&apos;t placed any prediction bets yet. Type <span className="text-[#38bdf8]">/market</span> in Telegram or browse the Explorer to trade.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <a
+                href="/"
+                className="px-4 py-2 bg-[#38bdf8] text-black font-semibold text-xs rounded font-mono hover:bg-[#0ea5e9] transition"
+              >
+                Browse Markets
+              </a>
+              <a
+                href="https://t.me/pantachat_bot"
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-[#181f2c] text-white border border-[#1e2638] text-xs rounded font-mono hover:bg-[#20293a] transition"
+              >
+                ✈️ Trade via Telegram
+              </a>
+            </div>
+          </div>
+        ) : (
+          /* Active Holdings Table */
+          <div className="panta-card overflow-hidden border border-[#1e2638] rounded-lg bg-[#121721]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-[#0b0e14] text-slate-400 uppercase text-[10px] tracking-wider border-b border-[#1e2638]">
+                  <tr>
+                    <th className="py-3 px-4">Market</th>
+                    <th className="py-3 px-4">Outcome</th>
+                    <th className="py-3 px-4">Shares</th>
+                    <th className="py-3 px-4">Cost</th>
+                    <th className="py-3 px-4">Value</th>
+                    <th className="py-3 px-4">PnL</th>
+                    <th className="py-3 px-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#181f2c]">
+                  {positions.map((pos) => {
+                    const isWinning = pos.status === "won";
+                    const isClaimable = isWinning && !pos.isClaimed;
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#0b0e14] text-slate-400 text-[11px] border-b border-[#1e2638]">
-                <tr>
-                  <th className="py-3 px-4">Market</th>
-                  <th className="py-3 px-4">Outcome</th>
-                  <th className="py-3 px-4">Shares</th>
-                  <th className="py-3 px-4">Cost (USDC)</th>
-                  <th className="py-3 px-4">Value (USDC)</th>
-                  <th className="py-3 px-4">PnL</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e2638]">
-                {positions.map((pos) => {
-                  const isPositive = pos.pnlUsdc >= 0;
-                  return (
-                    <tr key={pos.id} className="hover:bg-[#181f2c]/50 transition">
-                      <td className="py-3.5 px-4 font-sans font-medium text-white max-w-xs">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[10px] font-mono text-slate-500 uppercase">{pos.category}</span>
-                          <span className="truncate">{pos.marketTitle}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                            pos.outcome === "yes"
-                              ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/30"
-                              : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/30"
-                          }`}
-                        >
-                          {pos.outcome.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-300">{pos.shares.toFixed(2)}</td>
-                      <td className="py-3.5 px-4 text-slate-300">${pos.costUsdc.toFixed(2)}</td>
-                      <td className="py-3.5 px-4 text-white font-medium">${pos.currentValueUsdc.toFixed(2)}</td>
-                      <td className="py-3.5 px-4">
-                        <span className={isPositive ? "text-emerald-400 font-medium" : "text-rose-400"}>
-                          {isPositive ? "+" : ""}${pos.pnlUsdc.toFixed(2)} ({isPositive ? "+" : ""}
-                          {pos.pnlPercent.toFixed(1)}%)
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        {pos.status === "won" && !pos.isClaimed ? (
-                          <button
-                            onClick={() => handleClaim(pos.marketId)}
-                            className="px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[11px] font-medium transition cursor-pointer"
+                    return (
+                      <tr key={pos.id} className="hover:bg-[#151c27] transition">
+                        <td className="py-3.5 px-4 font-sans text-white max-w-xs">
+                          <div className="text-[11px] text-slate-500 font-mono mb-0.5">{pos.category}</div>
+                          <div className="font-medium line-clamp-1">{pos.marketTitle}</div>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              pos.outcome === "yes"
+                                ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/20"
+                                : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/20"
+                            }`}
                           >
-                            Claim
-                          </button>
-                        ) : (
-                          <span className="text-slate-500 text-[11px]">Open</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            {pos.outcome.toUpperCase()}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-300 font-medium">
+                          {pos.shares.toFixed(2)}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-slate-400">
+                          ${pos.costUsdc.toFixed(2)}
+                        </td>
+
+                        <td className="py-3.5 px-4 text-white font-semibold">
+                          ${pos.currentValueUsdc.toFixed(2)}
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <span className={pos.pnlUsdc >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                            {pos.pnlUsdc >= 0 ? "+" : ""}${pos.pnlUsdc.toFixed(2)} ({pos.pnlPercent.toFixed(1)}%)
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-4 text-right">
+                          {isClaimable ? (
+                            <button
+                              onClick={() => handleClaim(pos.marketId)}
+                              className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-[11px] rounded transition shadow-md shadow-emerald-500/20 cursor-pointer"
+                            >
+                              Claim
+                            </button>
+                          ) : pos.isClaimed ? (
+                            <span className="text-slate-500 text-[11px]">Claimed ✓</span>
+                          ) : (
+                            <span className="text-slate-500 text-[11px]">Active</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
       </main>
+
+      <footer className="w-full border-t border-[#1e2638] py-4 text-center text-xs font-mono text-slate-500">
+        PantaChat • Built with Panta Protocol on Solana Devnet • Colosseum Renaissance Hackathon
+      </footer>
     </div>
   );
 }

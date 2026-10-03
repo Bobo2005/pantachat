@@ -1,11 +1,11 @@
 import express, { type Request, type Response, type Express } from "express";
 import cors from "cors";
 import { config } from "../config.js";
-import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets } from "../db/queries.js";
+import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets, getMarketsByCreator } from "../db/queries.js";
 import { getMarketById, getMarkets } from "./panta/markets.js";
 import { getPrimaryOrderQuote, getPrimaryOrderBuild } from "./panta/trading.js";
 import { getCreateBuild, registerMarket } from "./panta/create.js";
-import { getClaimBuild } from "./panta/positions.js";
+import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
 import { getCreatorFeeClaimBuild } from "./panta/claims.js";
 import { reportTradeToPanta } from "../services/attribution-reporter.js";
 import { solanaConnection, waitForConfirmation } from "../utils/solana.js";
@@ -307,6 +307,159 @@ app.get("/api/markets/trending", async (_req: Request, res: Response) => {
     return res.json({ markets });
   } catch (err: any) {
     return res.status(500).json({ error: "MARKET_FETCH_FAILED", message: err.message });
+  }
+});
+
+/**
+ * GET /api/markets
+ * Returns all active markets from local database combined with Panta API.
+ */
+app.get("/api/markets", async (_req: Request, res: Response) => {
+  try {
+    const localMarkets = await getActiveMarkets().catch(() => []);
+    const pantaMarkets = await getMarkets({ limit: 50 }).catch(() => []);
+
+    // Merge and deduplicate by market ID
+    const marketMap = new Map<string, any>();
+
+    // Add Panta markets
+    for (const m of pantaMarkets) {
+      if (m && m.id) marketMap.set(m.id, m);
+    }
+
+    // Add/override local SQLite markets (created from chat)
+    for (const m of localMarkets) {
+      if (m && m.id) {
+        marketMap.set(m.id, {
+          id: m.id,
+          title: m.title,
+          description: m.description,
+          category: m.category,
+          phase: m.phase,
+          yesPrice: m.yesPrice || 0.5,
+          noPrice: m.noPrice || 0.5,
+          yesPercent: Math.round((m.yesPrice || 0.5) * 100),
+          noPercent: Math.round((m.noPrice || 0.5) * 100),
+          volumeUsdc: m.volumeUsdc || 0,
+          creator: m.creatorPlatformId ? `@${m.creatorPlatformId}` : (m.creatorWallet ? `${m.creatorWallet.slice(0, 4)}...${m.creatorWallet.slice(-4)}` : "PantaChat"),
+          createdAt: m.createdAt ? new Date(m.createdAt * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Today",
+        });
+      }
+    }
+
+    const markets = Array.from(marketMap.values());
+    return res.json({ markets });
+  } catch (err: any) {
+    console.error("[API /markets Error]:", err);
+    return res.status(500).json({ error: "MARKETS_FETCH_FAILED", message: err.message });
+  }
+});
+
+/**
+ * GET /api/positions
+ * Fetches real holdings for a user wallet from Panta API.
+ */
+app.get("/api/positions", async (req: Request, res: Response) => {
+  const wallet = (req.query.wallet as string | undefined)?.trim();
+  if (!wallet) {
+    return res.json({ positions: [] });
+  }
+
+  try {
+    const rawPositions = await getWalletPositions(wallet).catch(() => []);
+    
+    // Enrich positions with market questions if possible
+    const enriched = await Promise.all(
+      rawPositions.map(async (pos) => {
+        let marketTitle = `Market ${pos.marketId}`;
+        let category = "Prediction";
+        try {
+          const m = await getMarketById(pos.marketId);
+          if (m) {
+            marketTitle = m.title || marketTitle;
+            category = m.category || category;
+          }
+        } catch {
+          // ignore enrichment failure
+        }
+
+        const costUsdc = pos.spendUsdc || pos.shares * 0.5;
+        const currentValueUsdc = pos.claimableUsdc || (pos.status === "won" ? pos.shares * 1.0 : pos.shares * 0.5);
+        const pnlUsdc = currentValueUsdc - costUsdc;
+        const pnlPercent = costUsdc > 0 ? (pnlUsdc / costUsdc) * 100 : 0;
+
+        return {
+          id: `pos_${pos.marketId}_${pos.outcome}`,
+          marketId: pos.marketId,
+          marketTitle,
+          category,
+          outcome: pos.outcome,
+          shares: pos.shares,
+          costUsdc,
+          currentValueUsdc,
+          pnlUsdc,
+          pnlPercent,
+          status: pos.status || "open",
+          isClaimed: Boolean(pos.isClaimed),
+          claimableUsdc: pos.claimableUsdc || (pos.status === "won" && !pos.isClaimed ? pos.shares : 0),
+        };
+      })
+    );
+
+    return res.json({ positions: enriched });
+  } catch (err: any) {
+    console.error("[API /positions Error]:", err);
+    return res.status(500).json({ error: "POSITIONS_FETCH_FAILED", message: err.message });
+  }
+});
+
+/**
+ * GET /api/earnings
+ * Fetches markets spawned by a user from local DB, with graduation progress and royalties.
+ */
+app.get("/api/earnings", async (req: Request, res: Response) => {
+  const wallet = (req.query.wallet as string | undefined)?.trim();
+  const userId = (req.query.userId as string | undefined)?.trim();
+
+  try {
+    const allLocal = await getActiveMarkets().catch(() => []);
+    
+    // Filter by creator wallet or creator platform ID
+    const userMarkets = allLocal.filter((m) => {
+      if (wallet && m.creatorWallet && m.creatorWallet.toLowerCase() === wallet.toLowerCase()) return true;
+      if (userId && m.creatorPlatformId && m.creatorPlatformId.toLowerCase() === userId.toLowerCase()) return true;
+      // If neither specified, return all spawned markets from chats
+      if (!wallet && !userId) return Boolean(m.creatorPlatformId || m.creatorWallet);
+      return false;
+    });
+
+    const formatted = userMarkets.map((m) => {
+      const volumeUsdc = m.volumeUsdc || 0;
+      const graduationThresholdUsdc = 10000;
+      const status = m.phase === "secondary" || volumeUsdc >= graduationThresholdUsdc ? "graduated" : "bonding";
+      const royaltyRate = 0.005; // 0.50%
+      const creatorRoyaltyUsdc = volumeUsdc * royaltyRate;
+      const claimableRoyaltyUsdc = status === "graduated" ? creatorRoyaltyUsdc : 0;
+
+      return {
+        id: m.id,
+        title: m.title,
+        category: m.category || "Crypto",
+        source: m.platform ? `${m.platform.toUpperCase()} ${m.chatId ? m.chatId : ""}` : "Chat",
+        createdAt: m.createdAt ? new Date(m.createdAt * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Recent",
+        volumeUsdc,
+        graduationThresholdUsdc,
+        status,
+        creatorRoyaltyUsdc,
+        claimableRoyaltyUsdc,
+        isClaimed: false,
+      };
+    });
+
+    return res.json({ markets: formatted });
+  } catch (err: any) {
+    console.error("[API /earnings Error]:", err);
+    return res.status(500).json({ error: "EARNINGS_FETCH_FAILED", message: err.message });
   }
 });
 
