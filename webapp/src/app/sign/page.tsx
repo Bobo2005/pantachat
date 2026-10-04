@@ -411,10 +411,96 @@ function SigningFlow() {
 
       setState("confirming");
 
+      // 1. Immediately broadcast genuine transaction to Solana Devnet RPC
       let finalSig = "";
+      try {
+        const rawTx = signedTx.serialize();
+        try {
+          finalSig = await connection.sendRawTransaction(rawTx, {
+            skipPreflight: false,
+            maxRetries: 5,
+          });
+        } catch (sendErr: any) {
+          console.warn("[Broadcast direct retry with skipPreflight]:", sendErr.message);
+          finalSig = await connection.sendRawTransaction(rawTx, {
+            skipPreflight: true,
+            maxRetries: 5,
+          });
+        }
 
-      // Attempt submission via backend and local route handler
+        console.log("[Solana Devnet] Real on-chain broadcast signature:", finalSig);
+
+        // Await confirmation on Solana Devnet
+        try {
+          const latestBh = await connection.getLatestBlockhash("confirmed");
+          await connection.confirmTransaction(
+            {
+              signature: finalSig,
+              blockhash: latestBh.blockhash,
+              lastValidBlockHeight: latestBh.lastValidBlockHeight,
+            },
+            "confirmed"
+          );
+        } catch (confirmErr) {
+          console.warn("[Confirm Notice]: Polling signature status directly...", confirmErr);
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 1000));
+            const status = await connection.getSignatureStatus(finalSig);
+            if (
+              status.value?.confirmationStatus === "confirmed" ||
+              status.value?.confirmationStatus === "finalized"
+            ) {
+              break;
+            }
+          }
+        }
+      } catch (rpcErr: any) {
+        console.error("[Solana RPC Broadcast Error]:", rpcErr);
+        throw new Error(rpcErr.message || "Failed to broadcast transaction to Solana Devnet RPC.");
+      }
+
+      // 2. Persist position to client localStorage for immediate portfolio reflection
+      if (publicKey && finalSig) {
+        try {
+          const outcomeLower = ((session?.payload as any)?.outcome || queryOutcome || "yes").toLowerCase();
+          const targetMarket = session?.market || {
+            id: queryMarketId || "mkt_arsenal_chelsea_1790951354",
+            title: session?.payload?.title || queryTitle || "Will Arsenal beat Chelsea in the Premier League on October 18, 2026?",
+            category: session?.payload?.category || queryCategory || "Sports",
+            yesPrice: 0.5,
+            noPrice: 0.5,
+          };
+          const tradeCost = Number((session?.payload as any)?.amountUsdc || queryAmount || 20);
+          const price = outcomeLower === "yes" ? (targetMarket.yesPrice || 0.5) : (targetMarket.noPrice || 0.5);
+          const estShares = Math.floor(tradeCost / price);
+
+          const localPosKey = `panta_positions_${publicKey.toBase58()}`;
+          const currentLocal = JSON.parse(localStorage.getItem(localPosKey) || "[]");
+          const newPosEntry = {
+            id: `pos_${Date.now()}`,
+            marketId: targetMarket.id,
+            marketTitle: targetMarket.title,
+            category: targetMarket.category,
+            outcome: outcomeLower as "yes" | "no",
+            shares: estShares,
+            costUsdc: tradeCost,
+            currentValueUsdc: tradeCost,
+            pnlUsdc: 0,
+            pnlPercent: 0,
+            status: "open",
+            isClaimed: false,
+            txSignature: finalSig,
+            createdAt: Date.now(),
+          };
+          localStorage.setItem(localPosKey, JSON.stringify([newPosEntry, ...currentLocal]));
+        } catch (storageErr) {
+          console.warn("[LocalStorage Position Save Warning]:", storageErr);
+        }
+      }
+
+      // 3. Notify backend and local serverless route handler with genuine on-chain signature
       const submitPayload = {
+        signature: finalSig,
         signedTx: signedBase64,
         wallet: publicKey.toBase58(),
         type: sessionType || (isCreateSession ? "create" : "buy"),
@@ -432,115 +518,21 @@ function SigningFlow() {
 
       try {
         if (BACKEND_URL) {
-          try {
-            const submitRes = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(submitPayload),
-            });
-
-            if (submitRes.status === 409) {
-              const conflictData = await submitRes.json().catch(() => ({}));
-              throw new Error(
-                conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
-              );
-            }
-
-            if (submitRes.ok) {
-              const submitData = await submitRes.json();
-              if (submitData.success && submitData.signature) {
-                finalSig = submitData.signature;
-              }
-            }
-          } catch (bErr: any) {
-            if (bErr.message?.includes("already been launched")) throw bErr;
-            console.warn("[Backend Submit Error]:", bErr);
-          }
-        }
-
-        // Also notify local serverless endpoint on Vercel
-        try {
-          const localSubmitRes = await fetch(`/api/sessions/${sessionId}/submit`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...submitPayload, signature: finalSig || undefined }),
-          });
-
-          if (localSubmitRes.status === 409) {
-            const conflictData = await localSubmitRes.json().catch(() => ({}));
-            throw new Error(
-              conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
-            );
-          }
-
-          if (localSubmitRes.ok && !finalSig) {
-            const localData = await localSubmitRes.json();
-            if (localData.success && localData.signature) {
-              finalSig = localData.signature;
-            }
-          }
-        } catch (lErr: any) {
-          if (lErr.message?.includes("already been launched")) throw lErr;
-          console.warn("[Local Submit Warning]:", lErr);
-        }
-      } catch (submitErr: any) {
-        if (submitErr.message?.includes("already been launched")) {
-          throw submitErr;
-        }
-        console.warn("[Submit Fallback]: Submitting directly to Solana Devnet RPC from client", submitErr);
-      }
-
-      // If backend submission was unavailable or didn't return a signature, broadcast directly to Solana Devnet RPC
-      if (!finalSig) {
-        const rawTx = signedTx.serialize();
-        finalSig = await connection.sendRawTransaction(rawTx, {
-          skipPreflight: true,
-          maxRetries: 5,
-        });
-
-        try {
-          const latestBh = await connection.getLatestBlockhash("confirmed");
-          await connection.confirmTransaction(
-            {
-              signature: finalSig,
-              blockhash: latestBh.blockhash,
-              lastValidBlockHeight: latestBh.lastValidBlockHeight,
-            },
-            "confirmed"
-          );
-        } catch (confirmErr) {
-          console.warn("[Confirm Notice]: Checking signature status directly...", confirmErr);
-          for (let i = 0; i < 8; i++) {
-            await new Promise((r) => setTimeout(r, 1000));
-            const status = await connection.getSignatureStatus(finalSig);
-            if (
-              status.value?.confirmationStatus === "confirmed" ||
-              status.value?.confirmationStatus === "finalized"
-            ) {
-              break;
-            }
-          }
-        }
-
-        // Notify both local handler and backend with confirmed signature
-        const notifyBody = JSON.stringify({
-          ...submitPayload,
-          signature: finalSig,
-        });
-
-        fetch(`/api/sessions/${sessionId}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: notifyBody,
-        }).catch((notifyErr) => console.warn("[Local Submit Notify Warning]:", notifyErr));
-
-        if (BACKEND_URL) {
           fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: notifyBody,
-          }).catch((notifyErr) => console.warn("[Backend Submit Notify Warning]:", notifyErr));
+            body: JSON.stringify(submitPayload),
+          }).catch((bErr) => console.warn("[Backend Submit Error]:", bErr));
         }
+
+        // Notify local serverless route handler
+        fetch(`/api/sessions/${sessionId}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(submitPayload),
+        }).catch((lErr) => console.warn("[Local Submit Warning]:", lErr));
+      } catch (notifyErr: any) {
+        console.warn("[Submit Notice Warning]:", notifyErr);
       }
 
       if (typeof window !== "undefined" && sessionId) {

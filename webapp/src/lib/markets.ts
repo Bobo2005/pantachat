@@ -131,48 +131,64 @@ export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): 
 }
 
 /**
- * Asynchronously loads user trades/positions from cloud store.
+ * Asynchronously loads user trades/positions from cloud store and in-memory cache.
  */
 export async function getUserTradesAsync(wallet?: string): Promise<any[]> {
+  if (!globalThis.__PANTA_TRADES__) {
+    globalThis.__PANTA_TRADES__ = [];
+  }
+  const trades: any[] = [...globalThis.__PANTA_TRADES__];
+
   try {
     const res = await fetch(`https://api.restful-api.dev/objects/${CLOUD_TRADES_ID}`, {
       cache: "no-store",
     });
     if (res.ok) {
       const json = await res.json();
-      const allTrades = Array.isArray(json?.data?.trades) ? json.data.trades : [];
-      if (!wallet) return allTrades;
-      return allTrades.filter(
-        (t: any) =>
-          !t.wallet ||
-          t.wallet.toLowerCase().includes(wallet.toLowerCase().slice(0, 4)) ||
-          wallet.toLowerCase().includes(t.wallet.toLowerCase().slice(0, 4))
-      );
+      const cloudTrades = Array.isArray(json?.data?.trades) ? json.data.trades : [];
+      for (const ct of cloudTrades) {
+        if (!trades.some((t: any) => t.id === ct.id)) {
+          trades.push(ct);
+        }
+      }
     }
   } catch (err) {
-    console.warn("[Cloud Trades Warning]:", err);
+    // Graceful fallback to memory store
   }
-  return [];
+
+  if (!wallet) return trades;
+  return trades.filter(
+    (t: any) =>
+      !t.wallet ||
+      t.wallet.toLowerCase().trim() === wallet.toLowerCase().trim() ||
+      t.wallet.toLowerCase().includes(wallet.toLowerCase().slice(0, 6)) ||
+      wallet.toLowerCase().includes(t.wallet.toLowerCase().slice(0, 6))
+  );
 }
 
 /**
- * Records a user trade to the persistent cloud store.
+ * Records a user trade to in-memory store and attempts persistent cloud backup.
  */
 export async function addUserTradeAsync(trade: any): Promise<void> {
-  try {
-    const currentTrades = await getUserTradesAsync();
-    const newTrades = [trade, ...currentTrades.filter((t: any) => t.id !== trade.id)];
+  if (!globalThis.__PANTA_TRADES__) {
+    globalThis.__PANTA_TRADES__ = [];
+  }
+  globalThis.__PANTA_TRADES__ = [
+    trade,
+    ...globalThis.__PANTA_TRADES__.filter((t: any) => t.id !== trade.id),
+  ];
 
+  try {
     await fetch(`https://api.restful-api.dev/objects/${CLOUD_TRADES_ID}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: "PantaChat_User_Trades",
-        data: { trades: newTrades },
+        data: { trades: globalThis.__PANTA_TRADES__ },
       }),
     });
   } catch (err) {
-    console.warn("[Cloud Add Trade Warning]:", err);
+    // Cloud quota warning ignored
   }
 }
 

@@ -19,6 +19,7 @@ export interface PositionItem {
   status: "open" | "won" | "lost";
   isClaimed: boolean;
   claimableUsdc?: number;
+  txSignature?: string;
 }
 
 export default function PositionsPage() {
@@ -35,13 +36,40 @@ export default function PositionsPage() {
     setIsLoading(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "";
-      const res = await fetch(`${apiUrl}/api/positions?wallet=${publicKey.toBase58()}`, {
-        cache: "no-store",
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPositions(Array.isArray(data?.positions) ? data.positions : []);
+      let serverPositions: PositionItem[] = [];
+      try {
+        const res = await fetch(`${apiUrl}/api/positions?wallet=${publicKey.toBase58()}`, {
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const data = await res.json();
+          serverPositions = Array.isArray(data?.positions) ? data.positions : [];
+        }
+      } catch (serverErr) {
+        console.warn("[Positions Page] Server fetch warning:", serverErr);
       }
+
+      // Read local wallet positions saved upon trade execution
+      let localPositions: PositionItem[] = [];
+      try {
+        const key = `panta_positions_${publicKey.toBase58()}`;
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          localPositions = JSON.parse(stored);
+        }
+      } catch (storageErr) {
+        console.warn("[Positions Page] Local storage read error:", storageErr);
+      }
+
+      // Merge unique positions (prefer local with fresh signature if available)
+      const merged: PositionItem[] = [...localPositions];
+      for (const sp of serverPositions) {
+        if (!merged.some((mp) => mp.id === sp.id || (mp.txSignature && mp.txSignature === sp.txSignature))) {
+          merged.push(sp);
+        }
+      }
+
+      setPositions(merged);
     } catch (err) {
       console.warn("Could not fetch wallet positions:", err);
     } finally {

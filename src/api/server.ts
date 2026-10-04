@@ -38,13 +38,15 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
     if (!session) {
       if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_")) {
         const isCreate = id.startsWith("sess_create_");
+        const platformVal: "telegram" | "discord" =
+          req.query.platform === "discord" ? "discord" : "telegram";
         session = {
           id,
           type: isCreate ? "create" : "buy",
-          marketId: (req.query.market as string) || (req.query.marketId as string) || "",
+          marketId: ((req.query.market as string) || (req.query.marketId as string) || null) as string | null,
           platformUserId: (req.query.user as string) || "trader",
-          platform: (req.query.platform as string) || "telegram",
-          chatId: (req.query.chatId as string) || "",
+          platform: platformVal,
+          chatId: ((req.query.chatId as string) || null) as string | null,
           payloadJson: JSON.stringify({
             title: req.query.title || "Prediction Market",
             category: req.query.category || "Crypto",
@@ -61,6 +63,13 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
           message: "Signing session not found or expired.",
         });
       }
+    }
+
+    if (!session) {
+      return res.status(404).json({
+        error: "SESSION_NOT_FOUND",
+        message: "Signing session not found or expired.",
+      });
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -227,13 +236,15 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
     if (!session) {
       if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_")) {
         const isCreate = id.startsWith("sess_create_") || req.body.type === "create";
+        const platformVal: "telegram" | "discord" =
+          req.body.platform === "discord" ? "discord" : "telegram";
         session = {
           id,
           type: isCreate ? "create" : "buy",
-          marketId: req.body.marketId || "",
-          platformUserId: req.body.user || req.body.creatorPlatformId || "trader",
-          platform: req.body.platform || "telegram",
-          chatId: req.body.chatId || "",
+          marketId: (req.body.marketId || null) as string | null,
+          platformUserId: (req.body.user || req.body.creatorPlatformId || "trader") as string | null,
+          platform: platformVal,
+          chatId: (req.body.chatId || null) as string | null,
           payloadJson: JSON.stringify({
             title: req.body.title || "Prediction Market",
             category: req.body.category || "Crypto",
@@ -247,6 +258,10 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
       } else {
         return res.status(404).json({ error: "SESSION_NOT_FOUND", message: "Session not found." });
       }
+    }
+
+    if (!session) {
+      return res.status(404).json({ error: "SESSION_NOT_FOUND", message: "Session not found." });
     }
 
     if (session.status === "confirmed") {

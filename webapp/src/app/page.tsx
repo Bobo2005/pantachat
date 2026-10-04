@@ -196,10 +196,10 @@ export default function MarketExplorer() {
                   {heroMarket.title}
                 </h1>
                 <div className="flex items-center gap-3 text-xs font-mono shrink-0">
-                  <span className="flex items-center gap-1 text-[#38bdf8] font-semibold">
+                  <span suppressHydrationWarning className="flex items-center gap-1 text-[#38bdf8] font-semibold">
                     <span className="w-2 h-2 rounded-full bg-[#38bdf8]"></span> YES {heroMarket.yesPercent}%
                   </span>
-                  <span className="flex items-center gap-1 text-[#c084fc] font-semibold">
+                  <span suppressHydrationWarning className="flex items-center gap-1 text-[#c084fc] font-semibold">
                     <span className="w-2 h-2 rounded-full bg-[#c084fc]"></span> NO {heroMarket.noPercent}%
                   </span>
                 </div>
@@ -387,16 +387,16 @@ export default function MarketExplorer() {
                     <div className="grid grid-cols-2 gap-2 text-xs font-mono font-medium">
                       <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#38bdf8]">
                         <span>Yes</span>
-                        <span>{market.yesPercent.toFixed(1)}%</span>
+                        <span suppressHydrationWarning>{market.yesPercent.toFixed(1)}%</span>
                       </div>
                       <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#c084fc]">
                         <span>No</span>
-                        <span>{market.noPercent.toFixed(1)}%</span>
+                        <span suppressHydrationWarning>{market.noPercent.toFixed(1)}%</span>
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-1 border-t border-[#1e2638]">
-                      <span>{market.volume}</span>
+                      <span suppressHydrationWarning>{market.volume}</span>
                       <span className="text-slate-400">By {market.creator}</span>
                     </div>
                   </div>
@@ -445,9 +445,9 @@ export default function MarketExplorer() {
                         {item.title}
                       </p>
                       <div className="flex items-center gap-2 font-mono text-[10px]">
-                        <span className="text-[#38bdf8]">{item.yesPercent}% YES</span>
-                        <span className="text-[#c084fc]">{item.noPercent}% NO</span>
-                        <span className="text-slate-500 ml-auto">{item.volume}</span>
+                        <span suppressHydrationWarning className="text-[#38bdf8]">{item.yesPercent}% YES</span>
+                        <span suppressHydrationWarning className="text-[#c084fc]">{item.noPercent}% NO</span>
+                        <span suppressHydrationWarning className="text-slate-500 ml-auto">{item.volume}</span>
                       </div>
                     </div>
                   </div>
