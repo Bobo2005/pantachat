@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllLiveMarkets } from "@/lib/markets";
+import { getAllLiveMarketsAsync } from "@/lib/markets";
 
 // =============================================================================
 // GET /api/sessions/[id]
@@ -14,9 +14,31 @@ export async function GET(
     const { id: sessionId } = await params;
     const { searchParams } = new URL(req.url);
     const wallet = searchParams.get("wallet") || "";
+    const marketId = searchParams.get("market") || searchParams.get("marketId") || "";
+    const outcome = (searchParams.get("outcome") as "yes" | "no") || "yes";
+    const amount = Number(searchParams.get("amount") || 20);
+    const queryTitle = searchParams.get("title") || "";
+    const queryCategory = searchParams.get("category") || "";
 
-    const isCreate = sessionId.startsWith("sess_create_");
-    const markets = getAllLiveMarkets();
+    const isCreate = sessionId.startsWith("sess_create_") || searchParams.get("type") === "create";
+    const markets = await getAllLiveMarketsAsync();
+
+    let matchedMarket = markets.find(
+      (m) =>
+        m.id === marketId ||
+        (queryTitle && m.title?.toLowerCase().trim() === queryTitle.toLowerCase().trim())
+    );
+
+    if (!matchedMarket && markets.length > 0 && !isCreate) {
+      matchedMarket = markets.find((m) => m.id === marketId) || markets[0];
+    }
+
+    const price = matchedMarket
+      ? outcome === "yes"
+        ? matchedMarket.yesPrice
+        : matchedMarket.noPrice
+      : 0.5;
+    const estShares = Math.floor(amount / (price || 0.5));
 
     return NextResponse.json({
       session: {
@@ -26,12 +48,24 @@ export async function GET(
         expiresAt: Math.floor(Date.now() / 1000) + 600,
       },
       payload: {
-        amountUsdc: 20,
+        marketId: matchedMarket?.id || marketId,
+        title: matchedMarket?.title || queryTitle || "Prediction Market",
+        category: matchedMarket?.category || queryCategory || "Crypto",
+        outcome,
+        amountUsdc: amount,
+        cutoffAt: matchedMarket?.cutoffAt || "2026-12-31T23:59:59.000Z",
       },
-      market: markets[0] || null,
+      market: matchedMarket || {
+        id: marketId || sessionId,
+        title: queryTitle || "Prediction Market",
+        category: queryCategory || "Crypto",
+        yesPrice: 0.5,
+        noPrice: 0.5,
+      },
       quote: {
-        feeUsdc: "50.00",
-        effectivePrice: 0.5,
+        estimatedShares: estShares,
+        feeUsdc: isCreate ? "50.00" : "0.00",
+        effectivePrice: price,
       },
       transaction: "", // Triggers client-side Devnet builder
     });

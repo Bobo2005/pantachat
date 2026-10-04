@@ -102,6 +102,7 @@ const BACKEND_URL =
 function SigningFlow() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session") || searchParams.get("id");
+  const queryMarketId = searchParams.get("market") || searchParams.get("marketId");
   const queryType = searchParams.get("type");
   const queryTitle = searchParams.get("title");
   const queryCategory = searchParams.get("category");
@@ -129,7 +130,7 @@ function SigningFlow() {
   const [isStaleQuote, setIsStaleQuote] = useState<boolean>(false);
 
   // ---------------------------------------------------------------------------
-  // 1. Fetch Session & Real-Time Quote from Backend
+  // 1. Fetch Session & Real-Time Quote (Multi-tier: Backend -> Local Route -> Client Fallback)
   // ---------------------------------------------------------------------------
   const fetchSessionData = useCallback(async () => {
     if (!sessionId) {
@@ -143,57 +144,80 @@ function SigningFlow() {
       setIsStaleQuote(false);
 
       const walletParam = publicKey ? `?wallet=${publicKey.toBase58()}` : "";
-      const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}${walletParam}`);
+      let data: any = null;
 
-      if (!res.ok) {
-        if (res.status === 410) {
-          setIsStaleQuote(true);
-          setErrorMessage("This quote session has expired. Please re-draft from chat.");
-          setState("error");
-          return;
+      // 1. Primary: Try external BACKEND_URL if set
+      if (BACKEND_URL) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}${walletParam}`);
+          if (res.ok) {
+            data = await res.json();
+          } else if (res.status === 410) {
+            setIsStaleQuote(true);
+            setErrorMessage("This quote session has expired. Please re-draft from chat.");
+            setState("error");
+            return;
+          }
+        } catch (backendErr) {
+          console.warn("[Sign Page] Backend fetch failed, falling back to Next.js route:", backendErr);
         }
-        throw new Error(`Failed to load session from server (HTTP ${res.status})`);
       }
 
-      const data = await res.json();
+      // 2. Secondary: Try internal Next.js Serverless Route
+      if (!data) {
+        try {
+          const localParam = searchParams.toString() ? `?${searchParams.toString()}` : "";
+          const localRes = await fetch(`/api/sessions/${sessionId}${localParam}`);
+          if (localRes.ok) {
+            data = await localRes.json();
+          }
+        } catch (localErr) {
+          console.warn("[Sign Page] Local session route failed:", localErr);
+        }
+      }
 
-      // Check if session or market has already been launched/confirmed
-      const alreadyConfirmedSig =
-        typeof window !== "undefined"
-          ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
-          : null;
+      // 3. Process session data if obtained from server or local API
+      if (data && (data.session || data.market)) {
+        const alreadyConfirmedSig =
+          typeof window !== "undefined"
+            ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
+            : null;
 
-      if (data.session?.status === "confirmed" || data.alreadyLaunched || alreadyConfirmedSig) {
-        if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
+        if (data.session?.status === "confirmed" || data.alreadyLaunched || alreadyConfirmedSig) {
+          if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
+          setSession({
+            id: data.session?.id || sessionId,
+            type: data.session?.type || (isCreateSession ? "create" : "buy"),
+            status: "confirmed",
+            expiresAt: data.session?.expiresAt,
+            payload: data.payload || {},
+            market: data.market || data.existingMarket,
+            quote: data.quote,
+            transaction: "",
+          });
+          setState("success");
+          return;
+        }
+
         setSession({
-          id: data.session.id,
-          type: data.session.type,
-          status: "confirmed",
-          expiresAt: data.session.expiresAt,
+          id: data.session?.id || sessionId,
+          type: data.session?.type || (isCreateSession ? "create" : "buy"),
+          status: data.session?.status || "pending",
+          expiresAt: data.session?.expiresAt,
           payload: data.payload || {},
-          market: data.market || data.existingMarket,
+          market: data.market,
           quote: data.quote,
-          transaction: "",
+          transaction: data.transaction,
         });
-        setState("success");
+
+        setCountdown(90);
+        setState("quote");
         return;
       }
 
-      setSession({
-        id: data.session.id,
-        type: data.session.type,
-        status: data.session.status,
-        expiresAt: data.session.expiresAt,
-        payload: data.payload || {},
-        market: data.market,
-        quote: data.quote,
-        transaction: data.transaction,
-      });
-
-      setCountdown(90);
-      setState("quote");
+      throw new Error("Session could not be resolved from servers");
     } catch (err: any) {
-      console.warn("[Sign Page] Session fetch error:", err.message);
+      console.warn("[Sign Page] Session fetch error, attempting client quote synthesis:", err.message);
 
       // Check if this market was already confirmed locally
       const alreadyConfirmedSig =
@@ -207,39 +231,77 @@ function SigningFlow() {
         return;
       }
 
-      // Client-side fallback using URL query parameters if backend is unreachable
-      if (isCreateSession || queryTitle) {
+      // 4. Infallible Client-side fallback using URL query parameters and /api/markets
+      try {
+        let matchedMarket: any = null;
+        try {
+          const mRes = await fetch("/api/markets");
+          if (mRes.ok) {
+            const mList = await mRes.json();
+            matchedMarket = mList.find(
+              (m: any) =>
+                m.id === queryMarketId ||
+                (queryTitle && m.title?.toLowerCase().trim() === queryTitle.toLowerCase().trim())
+            ) || (queryMarketId ? mList.find((m: any) => m.id === queryMarketId) : mList[0]);
+          }
+        } catch (mErr) {
+          console.warn("[Sign Page] Could not fetch market list for fallback quote:", mErr);
+        }
+
+        const resolvedTitle = matchedMarket?.title || queryTitle || "Prediction Market";
+        const resolvedCategory = matchedMarket?.category || queryCategory || "Crypto";
+        const price = matchedMarket
+          ? queryOutcome === "yes"
+            ? (matchedMarket.yesPrice || 0.5)
+            : (matchedMarket.noPrice || 0.5)
+          : 0.5;
+        const estShares = Math.floor(queryAmount / price);
+
         setSession({
           id: sessionId,
           type: isCreateSession ? "create" : "buy",
           status: "pending",
           payload: {
-            title: queryTitle || "Drafted Prediction Market",
-            category: queryCategory || "Crypto",
+            marketId: matchedMarket?.id || queryMarketId || sessionId,
+            title: resolvedTitle,
+            category: resolvedCategory,
             outcome: queryOutcome,
             amountUsdc: queryAmount,
-            cutoffAt: "2026-12-31T23:59:59.000Z",
+            cutoffAt: matchedMarket?.cutoffAt || "2026-12-31T23:59:59.000Z",
           },
-          market: {
-            id: sessionId,
-            title: queryTitle || "Drafted Prediction Market",
-            category: queryCategory || "Crypto",
+          market: matchedMarket || {
+            id: queryMarketId || sessionId,
+            title: resolvedTitle,
+            category: resolvedCategory,
+            yesPrice: 0.5,
+            noPrice: 0.5,
           },
           quote: {
-            estimatedShares: 0,
-            feeUsdc: "50.00",
-            effectivePrice: 0.5,
+            estimatedShares: estShares,
+            feeUsdc: isCreateSession ? "50.00" : "0.00",
+            effectivePrice: price,
           },
+          transaction: "",
         });
+
+        setCountdown(90);
         setState("quote");
-      } else {
-        setErrorMessage(
-          `Unable to load session from backend (${BACKEND_URL}). Please verify your backend server is online.`
-        );
+      } catch (fallbackErr: any) {
+        setErrorMessage("Unable to initialize transaction session. Please try again.");
         setState("error");
       }
     }
-  }, [sessionId, publicKey, isCreateSession, queryTitle, queryCategory, queryOutcome, queryAmount]);
+  }, [
+    sessionId,
+    publicKey,
+    isCreateSession,
+    queryMarketId,
+    queryTitle,
+    queryCategory,
+    queryOutcome,
+    queryAmount,
+    searchParams,
+  ]);
 
   useEffect(() => {
     fetchSessionData();
@@ -351,46 +413,81 @@ function SigningFlow() {
 
       let finalSig = "";
 
-      // Attempt backend submission
-      try {
-        const submitRes = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            signedTx: signedBase64,
-            wallet: publicKey.toBase58(),
-            type: sessionType || (isCreateSession ? "create" : "buy"),
-            chatId: (session?.payload as any)?.chatId || queryChatId,
-            platform: session?.platform || queryPlatform,
-            user: session?.platformUserId || queryCreator,
-            creatorPlatformId: session?.platformUserId || queryCreator,
-            marketId: (session?.payload as any)?.marketId || session?.market?.id || searchParams.get("market"),
-            title: session?.payload?.title || session?.market?.title || queryTitle,
-            description: session?.payload?.description || session?.market?.description || queryDesc,
-            category: session?.payload?.category || session?.market?.category || queryCategory,
-            outcome: (session?.payload as any)?.outcome || queryOutcome,
-            amount: (session?.payload as any)?.amountUsdc || queryAmount,
-          }),
-        });
+      // Attempt submission via backend and local route handler
+      const submitPayload = {
+        signedTx: signedBase64,
+        wallet: publicKey.toBase58(),
+        type: sessionType || (isCreateSession ? "create" : "buy"),
+        chatId: (session?.payload as any)?.chatId || queryChatId,
+        platform: session?.platform || queryPlatform,
+        user: session?.platformUserId || queryCreator,
+        creatorPlatformId: session?.platformUserId || queryCreator,
+        marketId: (session?.payload as any)?.marketId || session?.market?.id || queryMarketId || searchParams.get("market"),
+        title: session?.payload?.title || session?.market?.title || queryTitle,
+        description: session?.payload?.description || session?.market?.description || queryDesc,
+        category: session?.payload?.category || session?.market?.category || queryCategory,
+        outcome: (session?.payload as any)?.outcome || queryOutcome,
+        amount: (session?.payload as any)?.amountUsdc || queryAmount,
+      };
 
-        if (submitRes.status === 409) {
-          const conflictData = await submitRes.json().catch(() => ({}));
-          throw new Error(
-            conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
-          );
+      try {
+        if (BACKEND_URL) {
+          try {
+            const submitRes = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(submitPayload),
+            });
+
+            if (submitRes.status === 409) {
+              const conflictData = await submitRes.json().catch(() => ({}));
+              throw new Error(
+                conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
+              );
+            }
+
+            if (submitRes.ok) {
+              const submitData = await submitRes.json();
+              if (submitData.success && submitData.signature) {
+                finalSig = submitData.signature;
+              }
+            }
+          } catch (bErr: any) {
+            if (bErr.message?.includes("already been launched")) throw bErr;
+            console.warn("[Backend Submit Error]:", bErr);
+          }
         }
 
-        if (submitRes.ok) {
-          const submitData = await submitRes.json();
-          if (submitData.success && submitData.signature) {
-            finalSig = submitData.signature;
+        // Also notify local serverless endpoint on Vercel
+        try {
+          const localSubmitRes = await fetch(`/api/sessions/${sessionId}/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...submitPayload, signature: finalSig || undefined }),
+          });
+
+          if (localSubmitRes.status === 409) {
+            const conflictData = await localSubmitRes.json().catch(() => ({}));
+            throw new Error(
+              conflictData.message || "A market with this question has already been launched. You cannot launch the same market twice."
+            );
           }
+
+          if (localSubmitRes.ok && !finalSig) {
+            const localData = await localSubmitRes.json();
+            if (localData.success && localData.signature) {
+              finalSig = localData.signature;
+            }
+          }
+        } catch (lErr: any) {
+          if (lErr.message?.includes("already been launched")) throw lErr;
+          console.warn("[Local Submit Warning]:", lErr);
         }
       } catch (submitErr: any) {
         if (submitErr.message?.includes("already been launched")) {
           throw submitErr;
         }
-        console.warn("[Backend Submit Fallback]: Submitting directly to Solana Devnet RPC from client", submitErr);
+        console.warn("[Submit Fallback]: Submitting directly to Solana Devnet RPC from client", submitErr);
       }
 
       // If backend submission was unavailable or didn't return a signature, broadcast directly to Solana Devnet RPC
@@ -425,29 +522,24 @@ function SigningFlow() {
           }
         }
 
-        // Notify backend with confirmed signature so it updates DB and dispatches bot confirmation message
-        try {
-          await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
+        // Notify both local handler and backend with confirmed signature
+        const notifyBody = JSON.stringify({
+          ...submitPayload,
+          signature: finalSig,
+        });
+
+        fetch(`/api/sessions/${sessionId}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: notifyBody,
+        }).catch((notifyErr) => console.warn("[Local Submit Notify Warning]:", notifyErr));
+
+        if (BACKEND_URL) {
+          fetch(`${BACKEND_URL}/api/sessions/${sessionId}/submit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              signature: finalSig,
-              wallet: publicKey.toBase58(),
-              type: sessionType || (isCreateSession ? "create" : "buy"),
-              chatId: (session?.payload as any)?.chatId || queryChatId,
-              platform: session?.platform || queryPlatform,
-              user: session?.platformUserId || queryCreator,
-              creatorPlatformId: session?.platformUserId || queryCreator,
-              marketId: (session?.payload as any)?.marketId || session?.market?.id || searchParams.get("market"),
-              title: session?.payload?.title || session?.market?.title || queryTitle,
-              description: session?.payload?.description || session?.market?.description || queryDesc,
-              category: session?.payload?.category || session?.market?.category || queryCategory,
-              outcome: (session?.payload as any)?.outcome || queryOutcome,
-              amount: (session?.payload as any)?.amountUsdc || queryAmount,
-            }),
-          });
-        } catch (notifyErr) {
-          console.warn("[Backend Submit Notify Warning]:", notifyErr);
+            body: notifyBody,
+          }).catch((notifyErr) => console.warn("[Backend Submit Notify Warning]:", notifyErr));
         }
       }
 

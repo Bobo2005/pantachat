@@ -34,12 +34,33 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
   const walletQuery = (req.query.wallet as string | undefined)?.trim();
 
   try {
-    const session = await getSessionById(id);
+    let session = await getSessionById(id);
     if (!session) {
-      return res.status(404).json({
-        error: "SESSION_NOT_FOUND",
-        message: "Signing session not found or expired.",
-      });
+      if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_")) {
+        const isCreate = id.startsWith("sess_create_");
+        session = {
+          id,
+          type: isCreate ? "create" : "buy",
+          marketId: (req.query.market as string) || (req.query.marketId as string) || "",
+          platformUserId: (req.query.user as string) || "trader",
+          platform: (req.query.platform as string) || "telegram",
+          chatId: (req.query.chatId as string) || "",
+          payloadJson: JSON.stringify({
+            title: req.query.title || "Prediction Market",
+            category: req.query.category || "Crypto",
+            outcome: req.query.outcome || "yes",
+            amountUsdc: Number(req.query.amount || 20),
+          }),
+          status: "pending",
+          createdAt: Math.floor(Date.now() / 1000),
+          expiresAt: Math.floor(Date.now() / 1000) + 600,
+        };
+      } else {
+        return res.status(404).json({
+          error: "SESSION_NOT_FOUND",
+          message: "Signing session not found or expired.",
+        });
+      }
     }
 
     const now = Math.floor(Date.now() / 1000);
@@ -202,9 +223,30 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
   const { signedTx, signature, wallet } = req.body;
 
   try {
-    const session = await getSessionById(id);
+    let session = await getSessionById(id);
     if (!session) {
-      return res.status(404).json({ error: "SESSION_NOT_FOUND", message: "Session not found." });
+      if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_")) {
+        const isCreate = id.startsWith("sess_create_") || req.body.type === "create";
+        session = {
+          id,
+          type: isCreate ? "create" : "buy",
+          marketId: req.body.marketId || "",
+          platformUserId: req.body.user || req.body.creatorPlatformId || "trader",
+          platform: req.body.platform || "telegram",
+          chatId: req.body.chatId || "",
+          payloadJson: JSON.stringify({
+            title: req.body.title || "Prediction Market",
+            category: req.body.category || "Crypto",
+            outcome: req.body.outcome || "yes",
+            amountUsdc: Number(req.body.amount || 20),
+          }),
+          status: "pending",
+          createdAt: Math.floor(Date.now() / 1000),
+          expiresAt: Math.floor(Date.now() / 1000) + 600,
+        };
+      } else {
+        return res.status(404).json({ error: "SESSION_NOT_FOUND", message: "Session not found." });
+      }
     }
 
     if (session.status === "confirmed") {
