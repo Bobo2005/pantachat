@@ -13,6 +13,7 @@ webapp/.next/
 .env
 .env.local
 .env.production
+.env*
 
 # SQLite database
 *.db

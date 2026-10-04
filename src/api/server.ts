@@ -279,7 +279,7 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
       const txBuffer = Buffer.from(signedTx, "base64");
       finalSig = await solanaConnection.sendRawTransaction(txBuffer, {
         skipPreflight: true,
-        maxRetries: 5,
+        maxRetries: BigInt(5),
       });
     }
 
@@ -599,7 +599,7 @@ app.get("/api/earnings", async (req: Request, res: Response) => {
  * Health check verifying Solana RPC and Panta API connectivity.
  */
 app.get("/api/health", async (_req: Request, res: Response) => {
-  let rpcSlot: number | null = null;
+  let rpcSlot: number | bigint | null = null;
   let rpcOk = false;
   try {
     rpcSlot = await solanaConnection.getSlot();
