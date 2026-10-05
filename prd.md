@@ -10,6 +10,12 @@ PantaChat is an everyday conversational prediction layer and non-custodial tradi
 2. **The Community Leader / Influencer:** Runs a community and wants engaging daily activities that generate passive creator revenue (creator fees unlocked upon graduation).
 3. **The Casual Participant:** Taps `[YES $5]` on a Telegram card, connects their Phantom mobile wallet inside a native modal, and confirms in 5 seconds.
 
+### 2.1 Competitive Positioning & Market Differentiation
+Existing prediction market bots (e.g. Polybot on Polygon) suffer from severe UX and security constraints:
+* **Custodial Vulnerability:** They generate hot wallets in-chat or ask for private keys. PantaChat is **100% non-custodial** via Solana Wallet Adapter & Telegram Mini App.
+* **Lack of Creation Flow:** Competitors only let users search and trade existing markets. PantaChat introduces **"Reply-to-Market" via Claude Sonnet 5.5**, allowing spontaneous market creation directly from chat arguments.
+* **Full-Lifecycle Scope:** PantaChat is the only tool supporting bonding curve trading, graduation alerts, soft-archived market history, winner claim pings, and creator royalties (`/earnings`).
+
 ---
 
 ## 3. Product Features & Functional Requirements

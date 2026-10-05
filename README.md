@@ -21,6 +21,28 @@ PantaChat turns any group chat or direct message into a full prediction market t
 
 ---
 
+## ⚔️ Competitive Landscape: What Makes PantaChat Unique
+
+While prediction market tools and Telegram bots exist, **no other project provides conversational, non-custodial prediction market creation and trading on Solana**:
+
+| Feature / Capability | **PantaChat** 🐾⚡ | **Polymarket Bots** *(Polybot, Poly-Bets)* | **Discord Info Bots** *(CoinTrendz, Alpha.bot)* | **AI Trading Agents** *(Turbine, TradeLabs)* |
+| :--- | :---: | :---: | :---: | :---: |
+| **Blockchain** | **Solana** (Instant, sub-cent fees) | Polygon / Ethereum | Multi-chain | Multi-chain |
+| **Panta Protocol Native** | ✅ **Full Integration** | ❌ (Polymarket only) | ❌ | ❌ |
+| **"Reply-to-Market" via AI** | ✅ **Claude Sonnet 5.5** | ❌ (Trade pre-existing only) | ❌ | ❌ |
+| **Non-Custodial Architecture** | ✅ **Phantom / Solflare / Backpack** | ⚠️ Mostly Custodial (Bot hot wallet) | N/A (Read-only) | ⚠️ API key based |
+| **Telegram Mini App (TMA)** | ✅ **Native In-Chat Sheet** | ❌ Webview bounce / Custodial | ❌ | ❌ |
+| **Discord Multi-Platform Parity** | ✅ **Slash + Right-Click App** | ❌ Telegram only | ⚠️ Discord only (Read-only) | ❌ Web dashboard |
+| **Flexible Custom Bet Sizes** | ✅ **Arbitrary Amount ($1–$10k+)** | ⚠️ Limited presets | ❌ | ⚠️ Fixed lot sizes |
+| **Creator Royalties (`/earnings`)** | ✅ **Claim on-chain protocol fees** | ❌ | ❌ | ❌ |
+| **Full Lifecycle Support** | ✅ **Draft $\to$ Trade $\to$ Claim** | ⚠️ Trading only | ❌ Informational only | ⚠️ Copy-trading only |
+
+### 🛡️ PantaChat's Core Moats
+1. **"Reply-to-Market" via Conversational AI**: No cumbersome market creation forms. Reply `/market` to any chat debate and Claude Sonnet 5.5 handles criteria, cutoff times, and verification rules automatically.
+2. **100% Non-Custodial Security**: Users never export private keys or trust bot wallets. All transactions are compiled as Solana `VersionedTransaction` payloads approved via Phantom or Solflare.
+3. **True End-to-End Lifecycle**: Unlike simple buy bots, PantaChat manages creation, bonding curve trading, graduation to secondary orderbooks, soft archiving of market history, winner claims, and creator fee payouts.
+4. **Organic Distribution Layer for Panta Protocol**: PantaChat turns casual group chats into high-velocity trading floors, driving active volume to Panta without requiring users to navigate an external DEX.
+
 ## 📂 Repository Structure
 
 ```

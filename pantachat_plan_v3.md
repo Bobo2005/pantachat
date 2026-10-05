@@ -14,6 +14,12 @@ Most hackathon entries are disposable prototypes that die after judging. **Panta
 
 Colosseum and Panta explicitly evaluate **"Impact Potential: Real-world use beyond the hackathon."** By building production-grade UI, multi-tenant group support, and non-custodial wallet UX, PantaChat delivers an everyday experience that communities will continue to use daily to settle friendly debates, wager on sports, and monetize alpha.
 
+### Competitive Moat: Why PantaChat is First-of-its-Kind
+* **Zero Direct Competitors on Solana/Panta:** Panta has no official Telegram or Discord bot; community tooling has been limited to read-only dashboards.
+* **Non-Custodial vs. Custodial Bots:** Unlike Polymarket Telegram bots that require exportable private keys or hot bot custody, PantaChat uses Solana Wallet Adapter & Telegram Mini Apps—users retain 100% control of their keys.
+* **"Reply-to-Market" AI Creation:** While competitor bots only allow betting on existing markets, PantaChat turns casual arguments into verified on-chain markets in seconds via Claude Sonnet 5.5.
+* **Full Protocol Lifecycle:** Encompasses AI Creation $\to$ Bonding Curve Trading $\to$ Secondary Graduation $\to$ Soft Archiving $\to$ Payout Claims $\to$ Creator Royalties (`/earnings`).
+
 ---
 
 ## 1. The 3 Complete UI Surfaces
