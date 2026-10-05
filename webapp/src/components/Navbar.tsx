@@ -5,10 +5,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import WalletButton from "@/components/WalletButton";
 import { DemoFundsModal } from "@/components/DemoFundsModal";
+import { CreateMarketModal } from "@/components/CreateMarketModal";
 
 export function Navbar() {
   const pathname = usePathname();
   const [isFaucetOpen, setIsFaucetOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   // Auto-open faucet modal if ?faucet=true is in URL
   useEffect(() => {
@@ -68,6 +70,17 @@ export function Navbar() {
 
         {/* Right Action */}
         <div className="flex items-center gap-2.5">
+          {/* Create Market Button */}
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 text-xs font-mono font-medium transition cursor-pointer shadow-sm shadow-emerald-500/10"
+          >
+            <span>✨</span>
+            <span className="hidden sm:inline">Create Market</span>
+            <span className="sm:hidden">Create</span>
+          </button>
+
           {/* Demo Funds Faucet Button */}
           <button
             type="button"
@@ -95,6 +108,12 @@ export function Navbar() {
       <DemoFundsModal
         isOpen={isFaucetOpen}
         onClose={() => setIsFaucetOpen(false)}
+      />
+
+      {/* Create Market Modal with Supabase Deduplication */}
+      <CreateMarketModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
       />
     </>
   );

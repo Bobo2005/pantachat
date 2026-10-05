@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAllLiveMarketsAsync } from "@/lib/markets";
+import { getAllLiveMarketsAsync, findDuplicateMarketAsync } from "@/lib/markets";
 
 // =============================================================================
 // GET /api/sessions/[id]
@@ -21,6 +21,23 @@ export async function GET(
     const queryCategory = searchParams.get("category") || "";
 
     const isCreate = sessionId.startsWith("sess_create_") || searchParams.get("type") === "create";
+
+    // Deduplication Guard: Check Supabase whether this market question already exists
+    if (isCreate && queryTitle) {
+      const duplicate = await findDuplicateMarketAsync(queryTitle);
+      if (duplicate) {
+        return NextResponse.json(
+          {
+            error: "MARKET_ALREADY_EXISTS",
+            message: `A prediction market for "${duplicate.title}" has already been created on Supabase. Duplicate markets cannot be created.`,
+            duplicateMarket: duplicate,
+            isDuplicate: true,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const markets = await getAllLiveMarketsAsync();
 
     let matchedMarket = markets.find(

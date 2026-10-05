@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, type LiveMarket } from "@/lib/markets";
+import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, type LiveMarket } from "@/lib/markets";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -196,6 +196,20 @@ export async function POST(
     // =========================================================================
     const creatorUser = creatorPlatformId || creator || user || "Community Predictor";
     const marketTitle = title || "Prediction Market";
+
+    // Deduplication Guard: Check Supabase whether this market has been created before
+    const duplicate = await findDuplicateMarketAsync(marketTitle);
+    if (duplicate) {
+      console.warn(`[Vercel API] Blocked duplicate market creation for: "${marketTitle}"`);
+      return NextResponse.json(
+        {
+          error: "MARKET_ALREADY_EXISTS",
+          message: `A prediction market for "${duplicate.title}" has already been created before. You cannot launch the same market twice.`,
+          market: duplicate,
+        },
+        { status: 409 }
+      );
+    }
 
     // 1. Add Market to live catalog so it immediately displays on pantachat.vercel.app
     const createdMarket = addLiveMarket({

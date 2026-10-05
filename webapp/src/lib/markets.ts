@@ -115,17 +115,74 @@ export async function getAllLiveMarketsAsync(): Promise<LiveMarket[]> {
 }
 
 /**
+ * Normalizes market title for consistent deduplication across punctuation and casing.
+ */
+export function normalizeMarketTitle(title: string): string {
+  return (title || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[?!.,;:'"“”’]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Searches Supabase and in-memory catalog for an existing market with matching normalized title.
+ */
+export async function findDuplicateMarketAsync(title: string): Promise<LiveMarket | null> {
+  const normalizedTarget = normalizeMarketTitle(title);
+  if (!normalizedTarget) return null;
+
+  // 1. Check Supabase first
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.from("markets").select("*");
+      if (!error && Array.isArray(data)) {
+        const found = data.find(
+          (m: any) => m.title && normalizeMarketTitle(m.title) === normalizedTarget
+        );
+        if (found) {
+          return {
+            id: found.id,
+            title: found.title,
+            category: found.category || "Crypto",
+            description: found.description || "",
+            creator: found.creator || "Community Predictor",
+            phase: found.phase || "primary",
+            yesPrice: Number(found.yes_price ?? found.yesPrice ?? 0.5),
+            noPrice: Number(found.no_price ?? found.noPrice ?? 0.5),
+            volumeUsdc: Number(found.volume_usdc ?? found.volumeUsdc ?? 50),
+            volumeRaw: Number(found.volume_raw ?? found.volumeRaw ?? 50),
+            createdAt: found.created_at || "Recent",
+            cutoffAt: found.cutoff_at || found.cutoffAt,
+            txSignature: found.tx_signature || found.txSignature,
+            chatId: found.chat_id || found.chatId,
+          };
+        }
+      }
+    } catch (sbErr) {
+      console.warn("[findDuplicateMarketAsync Warning]:", sbErr);
+    }
+  }
+
+  // 2. In-Memory fallback
+  const existingList = getAllLiveMarkets();
+  const memoryMatch = existingList.find(
+    (m) => normalizeMarketTitle(m.title) === normalizedTarget
+  );
+  return memoryMatch || null;
+}
+
+/**
  * Synchronous in-memory market registration with background cloud persistence.
  */
 export function addLiveMarket(market: Partial<LiveMarket> & { title: string }): LiveMarket {
   const existingList = getAllLiveMarkets();
   const id = market.id || `mkt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const normalizedNew = normalizeMarketTitle(market.title);
 
   // Prevent duplicate insertion
   const existing = existingList.find(
-    (m) =>
-      m.id === id ||
-      m.title.toLowerCase().trim() === market.title.toLowerCase().trim()
+    (m) => m.id === id || normalizeMarketTitle(m.title) === normalizedNew
   );
   if (existing) {
     if (market.chatId && !existing.chatId) {

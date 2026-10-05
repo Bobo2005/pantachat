@@ -128,6 +128,7 @@ function SigningFlow() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [txSignature, setTxSignature] = useState<string>("");
   const [isStaleQuote, setIsStaleQuote] = useState<boolean>(false);
+  const [duplicateMarket, setDuplicateMarket] = useState<any>(null);
 
   // Devnet SOL balance & quick faucet claim state
   const [userSolBalance, setUserSolBalance] = useState<number | null>(null);
@@ -195,7 +196,13 @@ function SigningFlow() {
       if (BACKEND_URL) {
         try {
           const res = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}${walletParam}`);
-          if (res.ok) {
+          if (res.status === 409) {
+            const errJson = await res.json();
+            setDuplicateMarket(errJson.duplicateMarket || errJson.existingMarket);
+            setErrorMessage(errJson.message || "A market with this question has already been created on Supabase.");
+            setState("error");
+            return;
+          } else if (res.ok) {
             data = await res.json();
           } else if (res.status === 410) {
             setIsStaleQuote(true);
@@ -213,12 +220,26 @@ function SigningFlow() {
         try {
           const localParam = searchParams.toString() ? `?${searchParams.toString()}` : "";
           const localRes = await fetch(`/api/sessions/${sessionId}${localParam}`);
-          if (localRes.ok) {
+          if (localRes.status === 409) {
+            const errJson = await localRes.json();
+            setDuplicateMarket(errJson.duplicateMarket || errJson.existingMarket);
+            setErrorMessage(errJson.message || errJson.error || "A market with this question has already been created on Supabase.");
+            setState("error");
+            return;
+          } else if (localRes.ok) {
             data = await localRes.json();
           }
         } catch (localErr) {
           console.warn("[Sign Page] Local session route failed:", localErr);
         }
+      }
+
+      // Check if duplicate market was flagged by backend response
+      if (data && (data.isDuplicate || data.duplicateMarket)) {
+        setDuplicateMarket(data.duplicateMarket || data.existingMarket);
+        setErrorMessage(data.message || data.error || "A market with this question has already been created on Supabase.");
+        setState("error");
+        return;
       }
 
       // 3. Process session data if obtained from server or local API
@@ -228,7 +249,7 @@ function SigningFlow() {
             ? sessionStorage.getItem(`panta_confirmed_${sessionId}`)
             : null;
 
-        if (data.session?.status === "confirmed" || data.alreadyLaunched || alreadyConfirmedSig) {
+        if (data.session?.status === "confirmed" || (data.alreadyLaunched && !data.duplicateMarket) || alreadyConfirmedSig) {
           if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
           setSession({
             id: data.session?.id || sessionId,
@@ -283,11 +304,23 @@ function SigningFlow() {
           const mRes = await fetch("/api/markets");
           if (mRes.ok) {
             const mList = await mRes.json();
-            matchedMarket = mList.find(
+            const list = Array.isArray(mList?.markets) ? mList.markets : (Array.isArray(mList) ? mList : []);
+            const targetNorm = (queryTitle || "").trim().toLowerCase().replace(/[?!.,;:'"“”’]+$/g, "").replace(/\s+/g, " ");
+            matchedMarket = list.find(
               (m: any) =>
                 m.id === queryMarketId ||
-                (queryTitle && m.title?.toLowerCase().trim() === queryTitle.toLowerCase().trim())
-            ) || (queryMarketId ? mList.find((m: any) => m.id === queryMarketId) : mList[0]);
+                (targetNorm && (m.title || "").trim().toLowerCase().replace(/[?!.,;:'"“”’]+$/g, "").replace(/\s+/g, " ") === targetNorm)
+            ) || (queryMarketId ? list.find((m: any) => m.id === queryMarketId) : list[0]);
+
+            if (isCreateSession && targetNorm) {
+              const dup = list.find((m: any) => (m.title || "").trim().toLowerCase().replace(/[?!.,;:'"“”’]+$/g, "").replace(/\s+/g, " ") === targetNorm);
+              if (dup) {
+                setDuplicateMarket(dup);
+                setErrorMessage(`A market with the question "${dup.title}" already exists on Supabase.`);
+                setState("error");
+                return;
+              }
+            }
           }
         } catch (mErr) {
           console.warn("[Sign Page] Could not fetch market list for fallback quote:", mErr);
@@ -390,6 +423,33 @@ function SigningFlow() {
       if (alreadyConfirmedSig) setTxSignature(alreadyConfirmedSig);
       setState("success");
       return;
+    }
+
+    if (duplicateMarket) {
+      setErrorMessage(`A prediction market for "${duplicateMarket.title}" already exists on Supabase. Duplicate markets cannot be created.`);
+      setState("error");
+      return;
+    }
+
+    if (isCreateSession) {
+      const candidateTitle = session?.payload?.title || queryTitle;
+      if (candidateTitle) {
+        try {
+          const mRes = await fetch("/api/markets");
+          if (mRes.ok) {
+            const mList = await mRes.json();
+            const list = Array.isArray(mList?.markets) ? mList.markets : (Array.isArray(mList) ? mList : []);
+            const targetNorm = candidateTitle.trim().toLowerCase().replace(/[?!.,;:'"“”’]+$/g, "").replace(/\s+/g, " ");
+            const dup = list.find((m: any) => (m.title || "").trim().toLowerCase().replace(/[?!.,;:'"“”’]+$/g, "").replace(/\s+/g, " ") === targetNorm);
+            if (dup) {
+              setDuplicateMarket(dup);
+              setErrorMessage(`A market with the question "${dup.title}" already exists on Supabase.`);
+              setState("error");
+              return;
+            }
+          }
+        } catch {}
+      }
     }
 
     if (isStaleQuote || countdown <= 0) {
@@ -961,19 +1021,52 @@ function SigningFlow() {
         {/* Error State */}
         {state === "error" && (
           <div className="flex flex-col items-center justify-center py-6 gap-3 text-center">
-            <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center text-lg">
-              ✕
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${duplicateMarket ? "bg-amber-500/20 text-amber-400 border border-amber-500/30" : "bg-rose-500/20 text-rose-400 border border-rose-500/30"}`}>
+              {duplicateMarket ? "⚠️" : "✕"}
             </div>
-            <div className="flex flex-col gap-1">
-              <h3 className="font-heading font-semibold text-sm text-white">Action Failed</h3>
-              <p className="text-xs text-rose-300 font-mono max-w-xs">{errorMessage}</p>
+            <div className="flex flex-col gap-1.5 w-full">
+              <h3 className="font-heading font-semibold text-base text-white">
+                {duplicateMarket ? "Market Already Exists on Supabase" : "Action Failed"}
+              </h3>
+              <p className="text-xs text-slate-300 font-mono max-w-sm mx-auto leading-relaxed">
+                {errorMessage}
+              </p>
+              {duplicateMarket && (
+                <div className="mt-2 p-3 rounded-lg bg-[#0b0e14] border border-[#1e2638] text-left text-xs font-mono flex flex-col gap-1.5">
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">Existing Live Market:</div>
+                  <div className="text-white font-medium text-xs line-clamp-2">{duplicateMarket.title}</div>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-400 pt-1 border-t border-slate-800">
+                    <span>YES: <b className="text-emerald-400">{Math.round((duplicateMarket.yesPrice ?? 0.5) * 100)}%</b></span>
+                    <span>NO: <b className="text-purple-400">{Math.round((duplicateMarket.noPrice ?? 0.5) * 100)}%</b></span>
+                    <span className="text-slate-500">•</span>
+                    <span>Vol: <b className="text-white">${duplicateMarket.volumeUsdc || duplicateMarket.volumeRaw || 0} USDC</b></span>
+                  </div>
+                </div>
+              )}
             </div>
-            <button
-              onClick={fetchSessionData}
-              className="mt-2 px-4 py-1.5 rounded bg-[#181f2c] hover:bg-[#20293a] text-white text-xs font-mono transition cursor-pointer"
-            >
-              Try Again
-            </button>
+            {duplicateMarket ? (
+              <div className="flex flex-col w-full gap-2 mt-2">
+                <a
+                  href={`/?market=${duplicateMarket.id}`}
+                  className="w-full py-2.5 rounded-md bg-[#38bdf8] hover:bg-[#0284c7] text-black font-semibold text-xs font-mono transition text-center shadow-lg shadow-sky-500/20 cursor-pointer"
+                >
+                  📈 Open & Trade Existing Market
+                </a>
+                <a
+                  href="/"
+                  className="w-full py-2 rounded-md bg-[#181f2c] hover:bg-[#20293a] text-slate-300 text-xs font-mono transition text-center border border-[#1e2638] cursor-pointer"
+                >
+                  Return to Explorer
+                </a>
+              </div>
+            ) : (
+              <button
+                onClick={fetchSessionData}
+                className="mt-2 px-4 py-1.5 rounded bg-[#181f2c] hover:bg-[#20293a] text-white text-xs font-mono transition cursor-pointer"
+              >
+                Try Again
+              </button>
+            )}
           </div>
         )}
       </div>

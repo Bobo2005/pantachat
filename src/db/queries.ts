@@ -138,13 +138,72 @@ export function normalizeMarketTitle(title: string): string {
 }
 
 /**
+ * Queries Supabase markets table directly to check if a market title already exists in the cloud catalog.
+ */
+async function findDuplicateInSupabase(normalizedTarget: string): Promise<Market | undefined> {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) return undefined;
+
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/markets?select=*`, {
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const match = data.find(
+          (m: any) => m.title && normalizeMarketTitle(m.title) === normalizedTarget
+        );
+        if (match) {
+          const cutMs = match.cutoff_at ? new Date(match.cutoff_at).getTime() : null;
+          const createdMs = match.created_at ? new Date(match.created_at).getTime() : Date.now();
+          return {
+            id: String(match.id),
+            title: String(match.title),
+            description: match.description || null,
+            category: match.category || null,
+            creatorWallet: match.creator_wallet || null,
+            creatorPlatformId: match.creator || match.creator_platform_id || null,
+            platform: (match.platform as any) || "telegram",
+            chatId: match.chat_id ? String(match.chat_id) : null,
+            messageId: match.message_id ? String(match.message_id) : null,
+            phase: (match.phase as any) || "primary",
+            cutoffAt: cutMs,
+            resolvedOutcome: match.resolved_outcome || null,
+            yesPrice: Number(match.yes_price ?? 0.5),
+            noPrice: Number(match.no_price ?? 0.5),
+            volumeUsdc: Number(match.volume_usdc ?? 50),
+            createdAt: createdMs,
+          };
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[findDuplicateInSupabase Warning]:", err.message);
+  }
+
+  return undefined;
+}
+
+/**
  * Searches for an existing active market with the same or equivalent normalized question/title.
- * Prevents users from launching the same prediction market multiple times.
+ * Checks Supabase and local SQLite to prevent users from launching duplicate prediction markets.
  */
 export async function findDuplicateMarket(title: string): Promise<Market | undefined> {
   const normalizedTarget = normalizeMarketTitle(title);
   if (!normalizedTarget) return undefined;
 
+  // 1. Check Supabase cloud database first (global source of truth)
+  const supabaseMatch = await findDuplicateInSupabase(normalizedTarget);
+  if (supabaseMatch) return supabaseMatch;
+
+  // 2. Check local SQLite DB
   const activeMarkets = await getActiveMarkets();
   return activeMarkets.find((m) => {
     return normalizeMarketTitle(m.title) === normalizedTarget;

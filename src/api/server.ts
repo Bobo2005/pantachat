@@ -129,7 +129,17 @@ app.get("/api/sessions/:id", async (req: Request, res: Response) => {
     // 2. Create Market Sessions
     else if (session.type === "create") {
       const duplicate = await findDuplicateMarket(payload.title);
-      if (duplicate || session.status === "confirmed") {
+      if (duplicate && session.status !== "confirmed") {
+        return res.status(409).json({
+          error: "MARKET_ALREADY_EXISTS",
+          message: `A prediction market for "${duplicate.title}" has already been created on Supabase. Duplicate markets cannot be created.`,
+          duplicateMarket: duplicate,
+          existingMarket: duplicate,
+          isDuplicate: true,
+        });
+      }
+
+      if (session.status === "confirmed") {
         return res.json({
           session: {
             id: session.id,
