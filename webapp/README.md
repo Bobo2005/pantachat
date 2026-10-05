@@ -11,7 +11,10 @@ The PantaChat WebApp provides non-custodial transaction signing, real-time predi
 ### 1. Market Explorer (`/`)
 - **Active & History Tabs**: Real-time prediction markets powered by Panta Protocol bonding curves. Resolved markets automatically move to the **Past / History** tab via the Soft Archiving architecture.
 - **Horizontal Category Pills**: Fluid touch-scrolling filter chips (All, Crypto, Tech, Sports, Politics, Culture) on mobile.
-- **Quick-Buy Modal Sheet**: Responsive slide-up modal with presets ($5, $20, $50, $100), dynamic odds calculations, and fee breakdown.
+- **Interactive Quick-Buy Modal Sheet**:
+  - **Custom Amount Input**: Direct numeric input field with `$` prefix and `USDC` badge to bet any arbitrary figure.
+  - **Quick Presets**: `$5`, `$10`, `$20`, `$50`, `$100` pills to instantly fill the custom input.
+  - **Live Estimates**: Real-time calculation of Estimated Shares and Payout if Won based on spot bonding curve odds.
 
 ### 2. Positions & Claims (`/positions`)
 - **Multi-Screen Responsive Layout**:
@@ -24,8 +27,9 @@ The PantaChat WebApp provides non-custodial transaction signing, real-time predi
 - Summary stat cards (`Total Volume`, `Graduated Markets`, `Claimable Royalties`) with responsive 1-column mobile / 3-column desktop grid.
 
 ### 4. Non-Custodial Signer Portal (`/sign?session=<id>`)
-- Deep-linked from Telegram Bot and Discord Bot when users trade in chat.
+- Deep-linked from Telegram Bot (`/bet` and preset buttons) and Discord Bot when users trade in chat.
 - **5-State Visual Stepper**: `Quote` $\to$ `Build` $\to$ `Sign` $\to$ `Broadcast` $\to$ `Confirmed`.
+- **Live Bet Size Adjuster**: Allows users to edit or fine-tune their custom amount directly on the signing screen prior to wallet approval.
 - Compiles Panta Protocol instructions into a Solana `VersionedTransaction` and signs using the connected wallet.
 
 ### 5. Demo Funds Faucet Modal
@@ -53,6 +57,18 @@ The PantaChat WebApp provides non-custodial transaction signing, real-time predi
   - Detects native Telegram environment via `window.Telegram.WebApp`.
   - Automatically triggers `tg.expand()` for a full-sheet view.
   - Provides an "Open in Safari / Chrome" fallback banner for mobile Phantom/Solflare deep-linking if the Telegram webview restricts external wallet connections.
+
+---
+
+## 🎨 Branding & Visual Assets
+
+Located in `webapp/public/` and `assets/`:
+- `panta-logo-white.png`: High-res 1024x1024 white-background logo (recommended for Discord bot avatar).
+- `panta-logo-white.jpg`: 1024x1024 white-background JPG.
+- `panta-logo-white.webp`: 1024x1024 WEBP variant.
+- `panta-logo-white.gif`: 512x512 GIF variant.
+- `panta-logo-white.svg`: Scalable vector source with square white canvas.
+- `panta-logo-black.svg`: Scalable vector source with dark canvas.
 
 ---
 

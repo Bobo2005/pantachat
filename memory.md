@@ -109,3 +109,25 @@ Orders must strictly follow:
 | `MARKET_NOT_GRADUATED` | Called creator fee claim before secondary phase | UI disables button and displays progress bar: `Liquidity: $X / $10,000 to Graduation` |
 | `TX_NOT_FOUND` | Reported trade to `/trades/` before RPC confirmed | Verify poller awaits Solana RPC commitment `confirmed` before calling `/trades/` |
 | `INVALID_CUTOFF` | Market resolution date is in past or <30m | AI Drafter validates `cutoffAt > Date.now() + 30 * 60 * 1000` before calling create quote |
+
+---
+
+## 6. Discord & Staging API Routing Invariants
+
+### 1. Market ID vs. Natural Language Routing
+* **Staging Fallback Fixture:** The Panta Staging API returns `{ title: "Fixture market for pktest keys. Not on mainnet." }` with `id: undefined` when querying `GET /markets/{id}/` with unknown endpoints or non-existent IDs.
+* **Invariant:** Never route arbitrary text or natural language prompts to `getMarketById()`.
+* **Guard Pattern:**
+  ```ts
+  const isLikelyId = !cleanQuery.includes(" ") && (cleanQuery.startsWith("mkt_") || cleanQuery.startsWith("market_") || /^[a-zA-Z0-9_-]{20,}$/.test(cleanQuery));
+  ```
+  If `cleanQuery` contains spaces or does not match ID format, always route to Claude Sonnet 5.5 (`draftMarketFromText`).
+
+### 2. Discord Slash Command Registration Latency
+* **Global (`Routes.applicationCommands`):** Discord requires 5–15 minutes to distribute slash commands globally across all guilds.
+* **Guild-Level (`Routes.applicationGuildCommands`):** Instantaneous propagation.
+* **Invariant:** In test environments, configure `DISCORD_GUILD_ID` in `.env` to enable immediate command sync for rapid iteration.
+
+### 3. Custom Amount Dynamic Instruction Invariant
+* When a user changes the bet amount on `/sign`, the frontend must recalculate `estimatedShares` and re-derive the Panta instruction set / SPL Memo.
+* The backend trade session must reflect the updated `spendUsdc` before the user signs, ensuring the Solana transaction parameters match what is submitted to `POST /trades/`.

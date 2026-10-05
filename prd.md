@@ -32,18 +32,26 @@ PantaChat is an everyday conversational prediction layer and non-custodial tradi
   * Calls `POST /markets/register/` with `createId` + `signature`.
   * Replaces draft message with live, interactive Market Card in chat.
 
-### 3.2 Live Interactive Market Cards
+### 3.2 Live Interactive Market Cards & Commands
 * **Visuals:** Unicode sentiment bar (`YES 68% [🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥] 32% NO`), total volume, trader count, countdown timer.
-* **Actions:** Inline buttons for `[YES $5]`, `[YES $20]`, `[NO $5]`, `[NO $20]`, `[Custom]`, `[🔄 Refresh]`.
+* **Telegram Commands & Actions:**
+  * Inline buttons for `[YES $5]`, `[YES $20]`, `[NO $5]`, `[NO $20]`, `[⚙️ Custom Amount]`, `[🔄 Refresh Odds]`.
+  * `/bet <marketId> <yes|no> <amount>`: Place a custom bet on any market.
+  * Reply-to-Bet: Replying `/bet yes 50` or `/buy no 25` directly to any in-chat card.
+* **Discord Slash Commands:**
+  * `/market query:<text>`: Draft a new market via Claude AI or fetch an existing market card.
+  * `/bet market_id:<id> outcome:<yes|no> amount:<number>`: Place custom bet with deep-linked signing session.
+  * Right-click message $\to$ Apps $\to$ "Make a prediction market".
 * **In-Place Refresh:** `🔄 Refresh` invokes `editMessageReplyMarkup` / `interaction.update()` to update odds without sending spam messages.
 * **Timing Enforcement:** If `now < startTime`, card displays "Opens in X" and buy buttons are disabled (preventing `MARKET_NOT_IN_PRIMARY` errors).
 * **Secondary State:** When graduated, card displays "Graduated to Secondary" and replaces buy buttons with "Trade on Panta" link-out.
 * **Settlement State:** When resolved, card highlights winning outcome and presents "Claim Winnings" button for eligible holders.
 
-### 3.3 Buy Order Flow & State Machine
-* **Order Initiation:** Tapping a preset amount generates a 90-second session.
+### 3.3 Buy Order Flow & Flexible Amount System
+* **Order Initiation:** Supports preset quick buttons ($5, $10, $20, $50, $100) and arbitrary custom numeric amounts across all surfaces.
+* **Signing Portal Live Adjuster:** Users can fine-tune their custom amount directly on `/sign` prior to wallet approval, triggering automatic re-quote and re-build of instructions.
 * **Pipeline:**
-  1. `POST /primaryorderquote/` with buyer wallet, market ID, side, decimal amount (`"20.00"`), and attribution `userId`.
+  1. `POST /primaryorderquote/` with buyer wallet, market ID, side, decimal amount (`"20.00"` or custom), and attribution `userId`.
   2. `POST /primaryorderbuild/` with `maxSlippageBps: 300` (3%) and `userId`.
   3. Client compiles `instructions` + `recentBlockhash` into a versioned transaction.
   4. Wallet signs $\to$ broadcasts on RPC $\to$ stores signature.

@@ -345,6 +345,9 @@ Task: Initialize the Telegram bot using Telegraf with full command routing.
      - If not a reply, checks if prompt arguments were provided (`/market Will BTC hit 100k?`).
      - Triggers AI Drafter service to generate structured draft.
      - Posts interactive Preview Card with `[ ✅ Confirm & Create ]` and `[ ❌ Cancel ]` buttons.
+   - `/bet <marketId> <yes|no> <amount>`:
+     - Allows custom amount betting on any market with instant validation and dynamic odds calculation.
+     - Reply-to-Bet: Users can reply `/bet yes 50` or `/buy no 100` directly to any in-chat market card.
    - `/positions`: Displays user's active bets and claimable payouts.
    - `/earnings`: Displays creator royalties and graduation status.
    - `/leaderboard`: Displays top community predictors by volume and PnL.
@@ -388,12 +391,13 @@ Task: Initialize the Discord bot using discord.js v14 with slash commands and th
    - (Note: Do NOT require privileged MessageContent intent).
 
 2. Create `src/bot/discord/commands.ts`:
-   - Register Application Commands via REST API:
-     - Slash Command `/market [query]`
-     - Slash Command `/positions`
-     - Slash Command `/earnings`
-     - Slash Command `/leaderboard`
-     - Slash Command /faucet [wallet]
+   - Register Application Commands via REST API (and `npm run register:discord` with `DISCORD_GUILD_ID`):
+     - Slash Command `/market [query]`: AI Market Drafter with natural language banter vs. market ID routing guard.
+     - Slash Command `/bet [market_id] [outcome] [amount]`: Custom amount betting with instant signing link.
+     - Slash Command `/positions`: Ephemeral view of open predictions and claims.
+     - Slash Command `/earnings`: Ephemeral creator royalties breakdown.
+     - Slash Command `/leaderboard`: Community trading rankings.
+     - Slash Command `/faucet [wallet]`: Zero-friction Devnet SOL dispenser.
      - **Message Context Menu Command (`ApplicationCommandType.Message`):** Labeled `"Make a prediction market"`.
        - When a user right-clicks any chat message $\to$ Apps $\to$ "Make a prediction market", it extracts the target message text and feeds it to the AI Drafter!
    - Handle command executions and ephemeral preview responses.

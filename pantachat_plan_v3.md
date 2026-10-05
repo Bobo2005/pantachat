@@ -59,19 +59,31 @@ PantaChat is not just a text bot; it features **three integrated UI surfaces**:
   ```text
   [1. Quote] ─── [2. Build] ─── [3. Approve] ─── [4. Confirm]
   ```
+* **Live Custom Bet Adjuster:** Modify bet amounts on the review step prior to signing, dynamically adjusting transaction instructions and SPL Memos.
+
+### Surface 3: Web Companion App (Desktop / Mobile Web)
+* **Market Discovery:** Active bonding curves and Past / History tab powered by Soft Archiving.
+* **Quick-Buy Modal with Custom Bet Input:** Direct numeric input field, quick pills (`$5`, `$10`, `$20`, `$50`, `$100`), and live estimated return calculations.
+* **Creator Royalties:** Monitor volume, graduated markets, and claim protocol fees directly to your wallet.
 
 ---
 
 ## 2. Core Architecture Innovations (Completed)
 
-1. **Supabase Market Deduplication:**
+1. **Flexible Custom Bet Amount Engine:**
+   - Universal custom bet support across WebApp numeric input, `/sign` portal live adjuster, Telegram Bot (`/bet <id> <yes|no> <amount>`, reply-to-bet), and Discord Bot (`/bet` slash command).
+2. **Supabase Market Deduplication:**
    - Real-time question normalization and database checks prevent identical prediction markets from being duplicated across WebApp, Telegram, or Discord.
-2. **Soft Archiving (Past / History Lifecycle):**
+3. **Soft Archiving (Past / History Lifecycle):**
    - Automatically migrates resolved markets into the Past / History feed while keeping player positions and winnings claimable forever.
-3. **Frictionless Demo Funds Faucet:**
+4. **Frictionless Demo Funds Faucet:**
    - Instant Devnet SOL transfers directly to user addresses with 24h rate limiting and cross-bot confirmation alerts. No third-party OAuth or GitHub linkage required.
-4. **Universal Responsive UX:**
+5. **Universal Responsive UX:**
    - Complete responsive layout across Desktop, Tablet, and Mobile / Telegram Mini App with a fixed bottom navigation bar, card-based mobile positions, and stabilized viewports.
+6. **Discord Bot Parity & Instant Slash Command Registration:**
+   - Full slash command set (`/market`, `/bet`, `/positions`, `/earnings`, `/leaderboard`, `/faucet`) plus message context menus. Instant server registration via `npm run register:discord` (`DISCORD_GUILD_ID`).
+7. **Brand Assets & Avatar Catalog:**
+   - White-background and dark-mode high-res avatars (`panta-logo-white.png`, `.jpg`, `.webp`, `.gif`, `.svg`) formatted for Discord profiles, bots, and socials.
 
 ---
 
@@ -81,9 +93,9 @@ PantaChat is not just a text bot; it features **three integrated UI surfaces**:
 |---|---|---|---|
 | **0:00–0:15** | Telegram group chat debate. | *"Prediction markets shouldn't be destinations you visit alone. They should live inside the conversations where debates actually happen."* | Problem statement & Core thesis |
 | **0:15–0:35** | User replies `/create`. Bot AI drafts standardized rules. Supabase checks deduplication. Creator confirms on Devnet. | *"Meet PantaChat. With one reply, Claude drafts market rules, deduplicates questions, and signs on Solana Devnet."* | Reply-to-Create Moat + Panta Creation API |
-| **0:35–0:55** | Live card appears in chat. User buys YES with 1-tap Devnet funds. Odds shift dynamically. | *"The group trades directly from the card with automated bonding curves."* | Buy Flow + UX + Attribution |
+| **0:35–0:55** | Live card appears in chat. User buys YES with custom amount ($35). Odds shift dynamically. | *"The group trades custom amounts directly from the card with automated bonding curves."* | Buy Flow + Custom Bets + UX |
 | **0:55–1:15** | Market resolves $\to$ moves to Past / History feed. Winner claims payout. Creator claims royalties. | *"Full lifecycle: soft archiving, instant payout claims, and creator royalties."* | Full Lifecycle Moat |
-| **1:15–1:40** | Responsive WebApp & TMA walk-through. | *"Seamless across Desktop, Mobile Web, and Telegram Mini Apps."* | Multi-Surface Execution |
+| **1:15–1:40** | Responsive WebApp, TMA & Discord walk-through. | *"Seamless across Desktop, Mobile Web, Telegram Mini Apps, and Discord servers."* | Multi-Surface Execution |
 | **1:40–2:00** | Live traction stats, open source repo, and closing slide. | *"PantaChat: Bringing prediction markets into the conversation. Powered by Panta."* | Polish & Impact |
 
 ---
@@ -96,6 +108,9 @@ PantaChat is not just a text bot; it features **three integrated UI surfaces**:
 - [x] Working Demo on Devnet + Frictionless `/faucet` mode for judges
 - [x] Supabase deduplication & soft-archiving active
 - [x] Universal responsive UI across Desktop, Mobile, and TMA
+- [x] Custom bet amount engine active across all 4 surfaces
+- [x] Discord Bot slash commands & instant registration script tested
+- [x] White & dark background brand logo assets formatted and saved
 - [x] Codebase sanitized of all secrets & API keys
 - [ ] Record 2-minute demo video following storyboard
 - [ ] Push to GitHub & deploy on Vercel/Render

@@ -126,25 +126,34 @@ pantachat/
 1. **Next.js + Solana Wallet Adapter:**
    - Configure `@solana/wallet-adapter-react` set to `clusterApiUrl("devnet")`.
    - Embed Telegram WebApp SDK (`@twa-dev/sdk`) so the signing page behaves natively as a bottom-sheet modal inside Telegram.
-2. **5-State Visual Signing Stepper:**
+2. **5-State Visual Signing Stepper & Custom Bet Adjuster:**
    - State 1: **Quote** (Fetches real-time price & fees).
    - State 2: **Build** (Receives unsigned VersionedTransaction from Panta).
    - State 3: **Approve** (Prompts Phantom / Solflare wallet popup).
    - State 4: **Confirm** (Sends tx via Devnet RPC, awaits `confirmed` commitment).
    - State 5: **Register / Report** (Calls `POST /markets/register/` for creates or `POST /trades/` for buys).
+   - **Live Custom Bet Adjuster:** Modify bet amounts on the review step prior to signing, dynamically adjusting transaction instructions and SPL Memos.
    - Closes Mini App and posts confirmation back to Telegram / Discord.
 
-### Phase 4: In-Chat Interactive Market Card (Telegram & Discord)
-1. **Telegram In-Chat Card:**
+### Phase 4: In-Chat Interactive Market Card & Multi-Platform Parity (Telegram & Discord)
+1. **Telegram In-Chat Card & Custom Betting:**
    - Rich text layout with custom Unicode Sentiment Bar (`[🟩🟩🟩🟩🟩🟥🟥]`).
    - Inline Keyboard:
      - Row 1: `[ YES $5 ]` `[ YES $20 ]` `[ NO $5 ]` `[ NO $20 ]`
-     - Row 2: `[ ⚙️ Custom ]` `[ 🔄 Refresh Odds ]` `[ 📊 Details ]`
+     - Row 2: `[ ⚙️ Custom Amount ]` `[ 🔄 Refresh Odds ]` `[ 📊 Details ]`
+   - Commands:
+     - `/bet <marketId> <yes|no> <amount>`: Direct custom bet placement.
+     - Reply-to-Bet: `/bet yes 50` or `/buy no 100` replying directly to any market card.
    - In-place updates via `editMessageReplyMarkup` to eliminate spam.
-2. **Discord Parity:**
-   - Message Context Menu: Right-click message $\to$ "Make a market".
+2. **Discord Parity & Instant Slash Command Registration:**
+   - Slash Commands:
+     - `/market query:<text>`: AI Market Drafter with natural language banter vs. market ID routing guard.
+     - `/bet market_id:<id> outcome:<yes|no> amount:<number>`: Custom bet placement with instant deep-linked signing session.
+     - `/positions`, `/earnings`, `/leaderboard`, `/faucet wallet:<address>`.
+   - Message Context Menu: Right-click message $\to$ Apps $\to$ "Make a prediction market".
    - Embed with dynamic colored border: Green for Live, Purple for Resolved.
    - Ephemeral replies for `/positions` and `/earnings` so personal balances remain private.
+   - Instant guild command synchronization script: `npm run register:discord`.
 
 ### Phase 5: Post-Trade Automation (The Full Lifecycle)
 1. **Resolution Poller & Winner Claims:**

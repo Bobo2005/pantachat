@@ -206,3 +206,86 @@ Deep-linked signing via `/sign?session=<id>` guides users through:
 3. `Sign`: Non-custodial signature with Phantom, Solflare, or Backpack.
 4. `Broadcast`: Solana RPC cluster confirmation.
 5. `Confirmed`: Updating Supabase order records and reporting trade via `POST /trades/`.
+
+---
+
+## 6. Custom Bet Amount Architecture
+
+PantaChat provides complete flexibility for wager sizes across all interfaces:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      CUSTOM BET AMOUNT ARCHITECTURE                    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+         ┌──────────────────────────┼──────────────────────────┐
+         ▼                          ▼                          ▼
+┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│  WebApp Explorer │       │  Sign Page Live  │       │ Bots (TG & Disc) │
+│ Quick-Buy Modal  │       │ Amount Adjuster  │       │ Custom Commands  │
+│  (Custom Input   │       │ (Pre-Approval    │       │ (/bet <id> <side>│
+│   + $5-$100)     │       │  Recalculation)  │       │  <amount>)       │
+└────────┬─────────┘       └────────┬─────────┘       └────────┬─────────┘
+         │                          │                          │
+         └──────────────────────────┼──────────────────────────┘
+                                    ▼
+                     ┌─────────────────────────────┐
+                     │   Dynamic Quote Generator   │
+                     │  • Spot Bonding Curve Math  │
+                     │  • Estimated Shares         │
+                     │  • Potential Profit & ROI   │
+                     └──────────────┬──────────────┘
+                                    ▼
+                     ┌─────────────────────────────┐
+                     │  Non-Custodial Transaction  │
+                     │  • Panta Instruction Build  │
+                     │  • Phantom / Solflare Sign  │
+                     └─────────────────────────────┘
+```
+
+1. **WebApp Quick-Buy Modal (`webapp/src/app/page.tsx`):**
+   - Direct numeric input with numeric sanitization (`amount <= 0` disabled).
+   - Quick pills (`$5`, `$10`, `$20`, `$50`, `$100`) for rapid 1-tap population.
+   - Dynamic real-time calculation:
+     $$\text{Estimated Shares} = \frac{\text{amount}}{\text{spotPrice}}$$
+     $$\text{Est. Return} = \text{Estimated Shares} \times \$1.00$$
+2. **Signing Portal Live Adjuster (`webapp/src/app/sign/page.tsx`):**
+   - User can modify the bet amount directly on the review screen before wallet signature.
+   - Triggers dynamic re-quote and re-build from the backend session, updating the VersionedTransaction and SPL Memo instructions on the fly.
+3. **Telegram Bot Custom Betting (`commands.ts` & `callbacks.ts`):**
+   - Slash Command: `/bet <marketId> <yes|no> <amount>` (e.g. `/bet mkt_solana yes 75`).
+   - Reply-to-Bet: Replying `/bet yes 50` or `/buy no 100` directly to any in-chat market card.
+   - Interactive Inline Button: `[ ⚙️ Custom Amount ]` button prompts custom input presets and Mini App deep links.
+4. **Discord Bot Custom Betting (`commands.ts` & `interactions.ts`):**
+   - Slash Command: `/bet market_id:<id> outcome:<yes|no> amount:<number>`.
+   - Generates an instant signing session card with personalized estimated shares and deep-linked approval portal.
+
+---
+
+## 7. Discord Bot Architecture & Command Registration
+
+### 7.1 Instant vs. Global Slash Command Sync
+Discord slash commands require registration via the Discord REST API (`Routes.applicationCommands` or `Routes.applicationGuildCommands`).
+
+- **Guild-Specific Registration (Development):**
+  If `DISCORD_GUILD_ID` is defined in `.env`, commands are registered directly to that server, making them available **instantaneously** with zero CDN cache delay:
+  ```ts
+  await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
+  ```
+- **Global Registration (Production):**
+  If `DISCORD_GUILD_ID` is omitted, commands register globally across all Discord servers. Propagation takes approximately 5–15 minutes.
+- **Dedicated Script:** Run `npm run register:discord` via [`scripts/register_discord_commands.ts`](file:///scripts/register_discord_commands.ts). In addition, `src/index.ts` automatically runs registration upon client startup.
+
+### 7.2 AI Drafter vs. Market ID Query Routing
+To prevent natural language questions from misrouting to Panta's staging dummy fixture (`"Fixture market for pktest keys..."`), `src/bot/discord/commands.ts` enforces strict route segmentation:
+- **Market ID Lookup:** Only triggered if `!cleanQuery.includes(" ")` and matches known ID patterns (`mkt_...` or hex hash).
+- **AI Drafter Route:** Any query containing spaces or natural language sentences routes directly to Claude Sonnet 5.5 (`draftMarketFromText`), preventing accidental fixture responses.
+
+---
+
+## 8. Brand Asset Pipeline & Metadata
+
+PantaChat provides standardized brand visual assets in `assets/` and `webapp/public/`:
+- **`panta-logo-white.png`**: High-resolution 1024x1024 white-background avatar optimized for Discord Bot Profile pictures and light theme cards.
+- **`panta-logo-white.jpg`**, **`panta-logo-white.webp`**, **`panta-logo-white.gif`**, and **`panta-logo-white.svg`**: Multi-format exports under 10MB meeting Discord, Telegram, and OpenGraph requirements.
+- **`panta-logo-black.svg`**: Dark-mode vector for headers and high-contrast night modes.

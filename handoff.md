@@ -115,6 +115,12 @@ npm run dev
 # Starts Next.js on http://localhost:3000
 ```
 
+### 3. Register Discord Slash Commands
+```bash
+npm run register:discord
+```
+*(If `DISCORD_GUILD_ID` is set in `.env`, commands sync to that test guild instantly. Otherwise, Discord takes 5-15 mins to propagate globally).*
+
 ---
 
 ## 4. Evaluator Verification Flow (Devnet & Staging)
@@ -126,20 +132,38 @@ npm run dev
 2. **Explore Active & Past Markets:**
    - View active markets with real-time bonding curves.
    - Switch to the **Past / History** tab to view settled markets.
-3. **Non-Custodial Trading:**
-   - Click YES or NO on any market card $\to$ select preset amount $\to$ Confirm & Sign.
-   - Compiles versioned transaction and signs directly with Phantom/Solflare.
-4. **Claim Winnings & Royalties:**
-   - Navigate to **Positions** to claim resolved market winnings.
-   - Navigate to **Royalties** to view creator fees accrued.
+3. **Custom Amount Non-Custodial Trading:**
+   - **WebApp Quick-Buy Modal:** Click YES or NO on any market card. Enter any custom amount (e.g. `$35`) or tap quick pills (`$5`, `$10`, `$20`, `$50`, `$100`). View live estimated shares and potential returns.
+   - **Signing Portal `/sign` Live Adjuster:** On the review step, tap `✏️ Custom Amount` to fine-tune your bet size before wallet approval. The transaction instruction and SPL Memo dynamically recompile.
+   - **Telegram Bot Betting:** Type `/bet <marketId> <yes|no> <amount>` (e.g. `/bet mkt_abc yes 75`), or reply directly to any market card with `/bet yes 50`.
+   - **Discord Bot Betting:** Run `/bet market_id:<id> outcome:<yes|no> amount:<number>` to receive an instant signing link with pre-calculated shares.
+4. **Natural Language Market Drafting:**
+   - In Telegram: Type `/market Will Solana hit $300 before Christmas?`
+   - In Discord: Type `/market query:Will BTC reach 150k this year?`
+   - Claude Sonnet 5.5 formats the question, creates objective resolution rules, validates deduplication in Supabase, and generates the signing session.
+5. **Claim Winnings & Royalties:**
+   - Navigate to **Positions** (`/positions`) to claim resolved market winnings.
+   - Navigate to **Royalties** (`/earnings`) to view and claim creator fees accrued upon market graduation.
 
 ---
 
-## 5. Submission Checklist (Colosseum & Superteam Earn)
+## 5. Visual Brand Assets Catalog
+
+Brand assets are located in [`assets/`](file:///assets/) and [`webapp/public/`](file:///webapp/public/):
+- **[`panta-logo-white.png`](file:///assets/panta-logo-white.png)**: 1024x1024 white-background avatar for Discord Bot profile and socials.
+- **`panta-logo-white.jpg`**, **`panta-logo-white.webp`**, **`panta-logo-white.gif`**, **`panta-logo-white.svg`**: Multi-format exports under 10MB.
+- **`panta-logo-black.svg`**: Scalable vector for dark UI themes.
+
+---
+
+## 6. Submission Checklist (Colosseum & Superteam Earn)
 
 - [x] Market deduplication and soft-archiving active.
 - [x] Zero-friction Devnet faucet active with 24h limit.
-- [x] Responsive layout tested on desktop, mobile, and TMA.
+- [x] Universal responsive layout tested on desktop, mobile, and TMA.
+- [x] Custom bet amount system active across WebApp, `/sign`, Telegram, and Discord.
+- [x] Discord Bot slash commands & AI natural language routing verified.
+- [x] White & dark background brand logo assets formatted and saved.
 - [x] Zero sensitive secrets in git tracking.
 - [x] WebApp builds cleanly with `next build`.
 - [ ] Push repository to GitHub.
