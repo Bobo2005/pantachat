@@ -117,9 +117,9 @@ export function CreateMarketModal({ isOpen, onClose }: CreateMarketModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div
-        className="w-full max-w-lg bg-[#121721] border border-[#1e2638] rounded-xl shadow-2xl p-6 text-white relative flex flex-col gap-4 font-sans max-h-[92vh] overflow-y-auto"
+        className="w-full max-w-lg bg-[#121721] border border-[#1e2638] rounded-xl shadow-2xl p-4 sm:p-6 text-white relative flex flex-col gap-4 font-sans max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

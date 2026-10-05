@@ -55,10 +55,11 @@ export function WalletButton({ className = "" }: { className?: string }) {
         <button
           onClick={handleConnectClick}
           disabled={connecting}
-          className={`px-3.5 py-1.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold font-mono transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${className}`}
+          className={`px-2.5 sm:px-3.5 py-1.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold font-mono transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0 ${className}`}
         >
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          <span>{connecting ? "Connecting..." : "Connect Wallet"}</span>
+          <span className="hidden sm:inline">{connecting ? "Connecting..." : "Connect Wallet"}</span>
+          <span className="sm:hidden">{connecting ? "..." : "Connect"}</span>
         </button>
 
         {/* Mobile Wallet Helper Modal for Android/iOS */}
@@ -125,9 +126,9 @@ export function WalletButton({ className = "" }: { className?: string }) {
   const truncated = `${pubkeyStr.slice(0, 4)}...${pubkeyStr.slice(-4)}`;
 
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
+    <div className={`flex items-center gap-1.5 sm:gap-2 shrink-0 ${className}`}>
       {balance !== null && (
-        <span className="text-[11px] font-mono px-2 py-1 rounded bg-[#0b0e14] text-slate-300 border border-[#1e2638]">
+        <span className="hidden sm:inline-block text-[11px] font-mono px-2 py-1 rounded bg-[#0b0e14] text-slate-300 border border-[#1e2638]">
           {balance.toFixed(2)} SOL
         </span>
       )}

@@ -124,18 +124,18 @@ export default function MarketExplorer() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-[#38bdf8]/20 selection:text-white pb-12">
+    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-[#38bdf8]/20 selection:text-white pb-20 md:pb-12">
       {/* Universal Header */}
       <Navbar />
 
       {/* 3-Column Main Stage */}
-      <div className="flex-1 w-full max-w-[1600px] mx-auto grid grid-cols-12 gap-5 px-5 py-5">
+      <div className="flex-1 w-full max-w-[1600px] mx-auto grid grid-cols-12 gap-3 sm:gap-5 px-3 sm:px-5 py-3 sm:py-5">
         {/* ================================================================== */}
         {/* Left Column (Category Filtering) */}
         {/* ================================================================== */}
-        <aside className="col-span-12 lg:col-span-2 flex flex-col gap-6 text-sm">
+        <aside className="col-span-12 lg:col-span-2 flex flex-col gap-2.5 lg:gap-6 text-sm">
           <div className="flex items-center justify-between text-xs font-medium text-slate-400">
-            <span className="uppercase tracking-wider font-mono">Market Topics</span>
+            <span className="uppercase tracking-wider font-mono text-[11px]">Topics</span>
             <button
               onClick={() => {
                 setSelectedCategory("All");
@@ -147,20 +147,20 @@ export default function MarketExplorer() {
             </button>
           </div>
 
-          {/* Category Filter Pills */}
-          <nav className="flex flex-col gap-1">
+          {/* Category Filter Pills (Horizontal swipe on mobile / Vertical list on Desktop) */}
+          <nav className="flex flex-row lg:flex-col gap-1.5 overflow-x-auto no-scrollbar pb-1 -mx-1 px-1">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`flex items-center justify-between px-3 py-2 rounded-md text-xs font-medium transition text-left cursor-pointer ${
+                className={`flex items-center justify-between px-3 py-1.5 lg:py-2 rounded-md text-xs font-medium transition text-left cursor-pointer whitespace-nowrap shrink-0 ${
                   selectedCategory === cat
-                    ? "bg-[#181f2c] text-white border-l-2 border-[#38bdf8]"
-                    : "text-slate-400 hover:text-white hover:bg-[#121721]"
+                    ? "bg-[#181f2c] text-white border border-[#38bdf8]/40 shadow-sm"
+                    : "text-slate-400 hover:text-white hover:bg-[#121721] border border-transparent"
                 }`}
               >
                 <span>{cat}</span>
-                <span className="text-[10px] font-mono text-slate-500">
+                <span className="text-[10px] font-mono text-slate-500 ml-2">
                   {cat === "All"
                     ? markets.length
                     : markets.filter((m) => m.category.toLowerCase() === cat.toLowerCase()).length}
@@ -169,8 +169,8 @@ export default function MarketExplorer() {
             ))}
           </nav>
 
-          {/* Group Bot Trigger Info */}
-          <div className="panta-card-subtle p-3 flex flex-col gap-2 text-xs border-[#1e2638]">
+          {/* Group Bot Trigger Info (Desktop only to prevent clutter on mobile) */}
+          <div className="hidden lg:flex panta-card-subtle p-3 flex-col gap-2 text-xs border-[#1e2638]">
             <span className="font-heading font-semibold text-white">⚡ In-Chat Trading</span>
             <p className="text-[11px] text-slate-400 leading-relaxed">
               Reply to any message with <code className="text-[#38bdf8] font-mono">/market</code> in Telegram or right-click in Discord to spawn a market instantly.

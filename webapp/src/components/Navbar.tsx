@@ -30,9 +30,9 @@ export function Navbar() {
 
   return (
     <>
-      <header className="h-14 border-b border-[#1e2638] bg-[#0b0e14] px-6 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2.5 group">
+      <header className="h-14 border-b border-[#1e2638] bg-[#0b0e14] px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30">
+        <div className="flex items-center gap-3 sm:gap-6">
+          <Link href="/" className="flex items-center gap-2 group">
             <div className="w-7 h-7 flex items-center justify-center shrink-0">
               <svg viewBox="0 0 383 379" className="w-6 h-6 text-white fill-current group-hover:text-[#38bdf8] transition">
                 <path fillRule="evenodd" clipRule="evenodd" d="M137.12 234.786C137.636 248.79 138.071 263.025 138.397 277.541C149.641 268.363 160.737 259.447 171.717 250.747C192.849 279.392 212.229 306.97 230.033 333.47C229.988 345.782 230.114 358.339 230.114 370.468C230.114 373.327 230.673 376.393 229.366 378.938C205.979 379.709 185.47 373.14 168.107 365.229C133.509 349.479 108.123 324.358 91.6633 290.234C84.7803 275.966 78.6626 258.69 77.0266 239.813C96.4085 237.939 116.433 236.255 137.12 234.786ZM173.686 277.055C173.841 277.236 174.004 277.411 174.16 277.591C173.454 276.778 172.755 275.953 172.078 275.109L173.686 277.055Z" />
@@ -41,13 +41,13 @@ export function Navbar() {
                 <path fillRule="evenodd" clipRule="evenodd" d="M155.908 0.225714C160.428 -0.554347 168.196 0.87043 173.337 1.72263C211.157 7.98066 238.298 24.6045 260.248 46.5614C272.812 59.1434 283.302 74.3946 290.88 91.4064C296.186 103.327 300.907 116.828 303.011 131.661C277.617 134.341 251.085 136.702 223.363 138.671C222.847 124.668 222.411 110.437 222.085 95.9221C210.841 105.1 199.745 114.011 188.766 122.711C176.469 106.042 164.76 89.7401 153.614 73.799C153.197 54.3683 153.421 29.7452 153.421 8.68951C153.421 4.69095 152.579 0.795815 155.908 0.225714ZM201.009 95.4231C202.7 96.8824 204.344 98.3781 205.958 99.8827L203.502 97.6249C202.682 96.8838 201.851 96.1495 201.009 95.4231Z" />
               </svg>
             </div>
-            <span className="font-heading font-bold text-lg tracking-tight text-white">PantaChat</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="font-heading font-bold text-base sm:text-lg tracking-tight text-white">PantaChat</span>
+            <span className="hidden sm:inline-block text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               Devnet 🟢
             </span>
           </Link>
 
-          {/* Navigation Tabs */}
+          {/* Navigation Tabs (Desktop) */}
           <nav className="hidden md:flex items-center gap-1 font-mono text-xs">
             {links.map((link) => {
               const isActive = pathname === link.href;
@@ -69,23 +69,22 @@ export function Navbar() {
         </div>
 
         {/* Right Action */}
-        <div className="flex items-center gap-2.5">
-          {/* Create Market Button */}
+        <div className="flex items-center gap-2">
+          {/* Create Market Button (Desktop) */}
           <button
             type="button"
             onClick={() => setIsCreateOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 text-xs font-mono font-medium transition cursor-pointer shadow-sm shadow-emerald-500/10"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 text-xs font-mono font-medium transition cursor-pointer shadow-sm shadow-emerald-500/10"
           >
             <span>✨</span>
-            <span className="hidden sm:inline">Create Market</span>
-            <span className="sm:hidden">Create</span>
+            <span>Create Market</span>
           </button>
 
-          {/* Demo Funds Faucet Button */}
+          {/* Demo Funds Faucet Button (Desktop) */}
           <button
             type="button"
             onClick={() => setIsFaucetOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 text-xs font-mono font-medium transition cursor-pointer shadow-sm shadow-sky-500/10"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 hover:text-sky-300 text-xs font-mono font-medium transition cursor-pointer shadow-sm shadow-sky-500/10"
           >
             <span>💧</span>
             <span>Demo Funds</span>
@@ -95,14 +94,69 @@ export function Navbar() {
             href="https://t.me/pantachat_bot"
             target="_blank"
             rel="noreferrer"
-            className="hidden sm:flex px-3 py-1.5 rounded-md border border-[#1e2638] hover:border-[#2a344d] text-xs font-mono text-slate-300 hover:text-white transition items-center gap-1.5 bg-[#121721]"
+            className="hidden lg:flex px-3 py-1.5 rounded-md border border-[#1e2638] hover:border-[#2a344d] text-xs font-mono text-slate-300 hover:text-white transition items-center gap-1.5 bg-[#121721]"
           >
             <span>✈️</span>
             <span>Telegram Bot</span>
           </a>
+
           <WalletButton />
         </div>
       </header>
+
+      {/* Mobile Bottom Navigation Bar (Telegram Mini App & Mobile Browsers) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0e121a]/95 backdrop-blur-md border-t border-[#1e2638] h-14 flex items-center justify-around px-2 text-[10px] font-mono">
+        <Link
+          href="/"
+          className={`flex flex-col items-center gap-1 transition ${
+            pathname === "/" ? "text-[#38bdf8] font-bold" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span className="text-base leading-none">🧭</span>
+          <span>Explorer</span>
+        </Link>
+
+        <Link
+          href="/positions"
+          className={`flex flex-col items-center gap-1 transition ${
+            pathname === "/positions" ? "text-[#38bdf8] font-bold" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span className="text-base leading-none">📊</span>
+          <span>Positions</span>
+        </Link>
+
+        {/* Center Primary Action: Create Market */}
+        <button
+          type="button"
+          onClick={() => setIsCreateOpen(true)}
+          className="flex flex-col items-center gap-0.5 -mt-3.5 group cursor-pointer"
+        >
+          <div className="w-10 h-10 rounded-full bg-emerald-500 text-black flex items-center justify-center text-lg shadow-lg shadow-emerald-500/30 group-active:scale-95 transition">
+            ✨
+          </div>
+          <span className="text-[9px] text-emerald-400 font-semibold">Create</span>
+        </button>
+
+        <Link
+          href="/earnings"
+          className={`flex flex-col items-center gap-1 transition ${
+            pathname === "/earnings" ? "text-[#38bdf8] font-bold" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span className="text-base leading-none">💰</span>
+          <span>Royalties</span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={() => setIsFaucetOpen(true)}
+          className="flex flex-col items-center gap-1 text-sky-400 hover:text-sky-300 transition cursor-pointer"
+        >
+          <span className="text-base leading-none">💧</span>
+          <span>Faucet</span>
+        </button>
+      </nav>
 
       {/* Demo Funds Modal */}
       <DemoFundsModal

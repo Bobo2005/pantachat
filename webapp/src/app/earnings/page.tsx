@@ -64,25 +64,25 @@ export default function CreatorEarningsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-[#38bdf8]/20 selection:text-white pb-12">
+    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex flex-col justify-between font-sans selection:bg-[#38bdf8]/20 selection:text-white pb-20 md:pb-12">
       <Navbar />
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-5 py-8 flex flex-col gap-6">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-5 py-5 sm:py-8 flex flex-col gap-4 sm:gap-6">
         {/* Header & Colosseum Badge */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#1e2638] pb-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 border-b border-[#1e2638] pb-4 sm:pb-5">
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-cyan-500/20 text-[#38bdf8] border border-[#38bdf8]/30">
+              <span className="text-[10px] sm:text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-cyan-500/20 text-[#38bdf8] border border-[#38bdf8]/30">
                 ⚡ Powered by Panta • Built for Colosseum
               </span>
             </div>
-            <h1 className="font-heading font-bold text-2xl text-white">Creator Royalties Hub</h1>
-            <p className="text-xs text-slate-400 font-mono">
+            <h1 className="font-heading font-bold text-xl sm:text-2xl text-white">Creator Royalties Hub</h1>
+            <p className="text-[11px] sm:text-xs text-slate-400 font-mono">
               Track prediction markets spawned from Telegram & Discord, monitor graduation volume, and claim creator royalties.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <div className="panta-card-subtle px-3 py-1.5 flex items-center gap-2 text-xs font-mono">
               <span className="text-slate-400">Claimable Royalties:</span>
               <span className="font-bold text-emerald-400">${claimableRoyalties.toFixed(2)} USDC</span>

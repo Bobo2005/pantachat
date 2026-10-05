@@ -688,8 +688,8 @@ function SigningFlow() {
   const isOutcomeYes = outcome.toLowerCase() === "yes";
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex items-center justify-center p-4 font-sans selection:bg-[#38bdf8]/20 selection:text-white">
-      <div className="w-full max-w-md panta-card p-5 border border-[#1e2638] shadow-2xl flex flex-col gap-5 bg-[#121721] rounded-lg">
+    <div className="min-h-screen bg-[#0b0e14] text-[#f8fafc] flex items-center justify-center p-3 sm:p-4 font-sans selection:bg-[#38bdf8]/20 selection:text-white">
+      <div className="w-full max-w-md panta-card p-4 sm:p-5 border border-[#1e2638] shadow-2xl flex flex-col gap-4 sm:gap-5 bg-[#121721] rounded-xl">
         {/* Top Header */}
         <div className="flex items-center justify-between border-b border-[#1e2638] pb-3 text-xs">
           <div className="flex items-center gap-2">
@@ -702,24 +702,24 @@ function SigningFlow() {
         </div>
 
         {/* 5-State Visual Stepper Bar */}
-        <div className="flex items-center justify-between gap-1 text-[10px] font-mono text-slate-400">
-          <div className={`flex items-center gap-1 ${state === "quote" ? "text-[#38bdf8] font-bold" : "text-emerald-400"}`}>
+        <div className="flex items-center justify-between gap-0.5 sm:gap-1 text-[9px] sm:text-[10px] font-mono text-slate-400">
+          <div className={`flex items-center gap-0.5 ${state === "quote" ? "text-[#38bdf8] font-bold" : "text-emerald-400"}`}>
             <span>1. Review</span>
           </div>
-          <span>→</span>
-          <div className={`flex items-center gap-1 ${state === "building" ? "text-[#38bdf8] font-bold" : state === "approving" || state === "confirming" || state === "success" ? "text-emerald-400" : ""}`}>
+          <span className="text-slate-600">→</span>
+          <div className={`flex items-center gap-0.5 ${state === "building" ? "text-[#38bdf8] font-bold" : state === "approving" || state === "confirming" || state === "success" ? "text-emerald-400" : ""}`}>
             <span>2. Build</span>
           </div>
-          <span>→</span>
-          <div className={`flex items-center gap-1 ${state === "approving" ? "text-[#38bdf8] font-bold" : state === "confirming" || state === "success" ? "text-emerald-400" : ""}`}>
+          <span className="text-slate-600">→</span>
+          <div className={`flex items-center gap-0.5 ${state === "approving" ? "text-[#38bdf8] font-bold" : state === "confirming" || state === "success" ? "text-emerald-400" : ""}`}>
             <span>3. Sign</span>
           </div>
-          <span>→</span>
-          <div className={`flex items-center gap-1 ${state === "confirming" ? "text-[#38bdf8] font-bold" : state === "success" ? "text-emerald-400" : ""}`}>
+          <span className="text-slate-600">→</span>
+          <div className={`flex items-center gap-0.5 ${state === "confirming" ? "text-[#38bdf8] font-bold" : state === "success" ? "text-emerald-400" : ""}`}>
             <span>4. Confirm</span>
           </div>
-          <span>→</span>
-          <div className={`flex items-center gap-1 ${state === "success" ? "text-emerald-400 font-bold" : ""}`}>
+          <span className="text-slate-600">→</span>
+          <div className={`flex items-center gap-0.5 ${state === "success" ? "text-emerald-400 font-bold" : ""}`}>
             <span>5. Done</span>
           </div>
         </div>

@@ -138,8 +138,8 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md rounded-2xl bg-[#0f1420] border border-[#1e283d] p-6 shadow-2xl text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md rounded-2xl bg-[#0f1420] border border-[#1e283d] p-4 sm:p-6 shadow-2xl text-slate-100 max-h-[92vh] overflow-y-auto">
         {/* Close Button */}
         <button
           onClick={onClose}
