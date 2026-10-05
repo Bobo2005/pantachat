@@ -9,7 +9,11 @@ import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
 import { getCreatorFeeClaimBuild } from "./panta/claims.js";
 import { reportTradeToPanta } from "../services/attribution-reporter.js";
 import { solanaConnection, waitForConfirmation, buildDevnetVersionedTransaction } from "../utils/solana.js";
-import { broadcastMarketCreatedNotification, broadcastTradeNotification } from "../services/market-notifier.js";
+import {
+  broadcastMarketCreatedNotification,
+  broadcastTradeNotification,
+  broadcastFaucetNotification,
+} from "../services/market-notifier.js";
 import { pantaGet } from "./panta/client.js";
 
 // =============================================================================
@@ -591,6 +595,33 @@ app.get("/api/earnings", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[API /earnings Error]:", err);
     return res.status(500).json({ error: "EARNINGS_FETCH_FAILED", message: err.message });
+  }
+});
+
+/**
+ * POST /api/faucet/notify
+ * Dispatches an on-chain faucet confirmation message directly to Telegram or Discord chat.
+ */
+app.post("/api/faucet/notify", async (req: Request, res: Response) => {
+  const { platform, chatId, wallet, signature, amount, newBalance } = req.body;
+
+  if (!chatId || !wallet || !signature) {
+    return res.status(400).json({ error: "Missing required notification fields." });
+  }
+
+  try {
+    await broadcastFaucetNotification({
+      platform,
+      chatId,
+      walletAddress: wallet,
+      amount: Number(amount) || 0.25,
+      signature,
+      newBalance: newBalance !== undefined ? Number(newBalance) : null,
+    });
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.warn("[Faucet Notify Error]:", err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
 

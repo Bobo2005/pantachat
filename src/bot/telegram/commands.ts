@@ -368,34 +368,56 @@ export function registerTelegramCommands(bot: Telegraf): void {
         // Fallback to direct RPC if webapp is starting up or offline
       }
 
+      let signature = "";
+      let amount = 0.25;
+
       if (apiSuccess && apiResult) {
-        return ctx.reply(
-          `✅ *Devnet Funds Dispensed!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `• *Amount:* ${apiResult.amount || 0.25} SOL\n` +
-            `• *Recipient:* \`${recipientAddress}\`\n` +
-            `• *Tx Signature:* \`${apiResult.signature}\`\n\n` +
-            `[View on Solana Explorer](${apiResult.explorerUrl || `https://explorer.solana.com/tx/${apiResult.signature}?cluster=devnet`})\n\n` +
-            `_Note: Next claim will be available after 24 hours._`,
-          { parse_mode: "Markdown" }
+        signature = apiResult.signature;
+        amount = apiResult.amount || 0.25;
+      } else {
+        // 2. Direct RPC Fallback
+        const airdropSig = await solanaConnection.requestAirdrop(
+          pubkey,
+          Math.round(0.25 * LAMPORTS_PER_SOL)
         );
+        await waitForConfirmation(airdropSig, 20000);
+        signature = airdropSig;
       }
 
-      // 2. Direct RPC Fallback
-      const airdropSig = await solanaConnection.requestAirdrop(
-        pubkey,
-        Math.round(0.25 * LAMPORTS_PER_SOL)
-      );
+      // Fetch updated on-chain balance
+      let currentBal: number | null = null;
+      try {
+        const lamports = await solanaConnection.getBalance(pubkey);
+        currentBal = Number(lamports) / Number(LAMPORTS_PER_SOL);
+      } catch {}
 
-      await waitForConfirmation(airdropSig, 20000);
+      const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 
-      return ctx.reply(
-        `✅ *Devnet Airdrop Successful!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `• *Amount:* 0.25 SOL\n` +
-          `• *Recipient:* \`${recipientAddress}\`\n` +
-          `• *Tx Signature:* \`${airdropSig}\`\n\n` +
-          `[View on Solana Explorer](https://explorer.solana.com/tx/${airdropSig}?cluster=devnet)`,
-        { parse_mode: "Markdown" }
-      );
+      const confirmationLines = [
+        `💧 *Devnet Faucet Confirmation*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `✅ *Status:* Demo funds delivered on-chain!`,
+        `💰 *Amount Credited:* *+${amount} SOL*`,
+        `👤 *Recipient Wallet:* \`${recipientAddress}\``,
+        currentBal !== null ? `💳 *Current Balance:* \`${currentBal.toFixed(3)} SOL\`` : null,
+        `⏳ *Daily Limit:* Strictly 1 request per 24 hours`,
+        ``,
+        `⛓️ [View On-Chain Tx on Solana Explorer](${explorerUrl})`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👇 *Use your test funds to start predicting:*`,
+      ].filter(Boolean).join("\n");
+
+      return ctx.reply(confirmationLines, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🔍 View on Explorer", url: explorerUrl },
+              { text: "🚀 Open Markets", url: config.WEBAPP_URL },
+            ],
+          ],
+        },
+      });
     } catch (err: any) {
       return ctx.reply(
         `⚠️ *Faucet Request Failed:*\n${err.message || "Invalid address or RPC faucet rate limit"}\n\n` +

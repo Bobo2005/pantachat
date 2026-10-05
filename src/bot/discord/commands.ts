@@ -8,6 +8,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
   MessageFlags,
   type ChatInputCommandInteraction,
   type MessageContextMenuCommandInteraction,
@@ -424,30 +425,60 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
       // Fallback to direct RPC if webapp is starting up
     }
 
+    let signature = "";
+    let amount = 0.25;
+
     if (apiSuccess && apiResult) {
-      await interaction.editReply({
-        content:
-          `✅ **Devnet Funds Dispensed!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `• **Amount:** ${apiResult.amount || 0.25} SOL\n` +
-          `• **Recipient:** \`${recipientAddress}\`\n` +
-          `• **Tx Signature:** \`${apiResult.signature}\`\n\n` +
-          `[View on Solana Explorer](${apiResult.explorerUrl || `https://explorer.solana.com/tx/${apiResult.signature}?cluster=devnet`})\n\n` +
-          `_Note: Next claim will be available after 24 hours._`,
-      });
-      return;
+      signature = apiResult.signature;
+      amount = apiResult.amount || 0.25;
+    } else {
+      // 2. Direct RPC Fallback
+      const airdropSig = await solanaConnection.requestAirdrop(pubkey, Math.round(0.25 * LAMPORTS_PER_SOL));
+      await waitForConfirmation(airdropSig, 25000);
+      signature = airdropSig;
     }
 
-    // 2. Direct RPC Fallback
-    const airdropSig = await solanaConnection.requestAirdrop(pubkey, Math.round(0.25 * LAMPORTS_PER_SOL));
-    await waitForConfirmation(airdropSig, 25000);
+    // Fetch updated balance
+    let currentBal: number | null = null;
+    try {
+      const lamports = await solanaConnection.getBalance(pubkey);
+      currentBal = Number(lamports) / Number(LAMPORTS_PER_SOL);
+    } catch {}
+
+    const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    const shortWallet = `${recipientAddress.slice(0, 4)}...${recipientAddress.slice(-4)}`;
+
+    const embed = new EmbedBuilder()
+      .setTitle("💧 Devnet Faucet Confirmation")
+      .setColor(0x10b981)
+      .setDescription("Demo SOL was successfully transferred to your wallet on Solana Devnet.")
+      .addFields(
+        { name: "💰 Amount Credited", value: `+${amount} SOL`, inline: true },
+        { name: "👤 Recipient", value: `\`${shortWallet}\``, inline: true },
+        { name: "🌐 Network", value: "Solana Devnet 🟢", inline: true }
+      );
+
+    if (currentBal !== null) {
+      embed.addFields({ name: "💳 Current Balance", value: `${currentBal.toFixed(3)} SOL`, inline: true });
+    }
+
+    embed.addFields({ name: "⏳ Daily Limit", value: "Strictly 1 request per 24 hours", inline: true });
+    embed.setTimestamp();
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel("View on Solana Explorer")
+        .setStyle(ButtonStyle.Link)
+        .setURL(explorerUrl),
+      new ButtonBuilder()
+        .setLabel("Open Prediction Markets")
+        .setStyle(ButtonStyle.Link)
+        .setURL(config.WEBAPP_URL)
+    );
 
     await interaction.editReply({
-      content:
-        `✅ **Devnet Airdrop Successful!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• **Amount:** 0.25 SOL\n` +
-        `• **Recipient:** \`${recipientAddress}\`\n` +
-        `• **Tx Signature:** \`${airdropSig}\`\n\n` +
-        `[View on Solana Explorer](https://explorer.solana.com/tx/${airdropSig}?cluster=devnet)`,
+      embeds: [embed],
+      components: [row],
     });
   } catch (err: any) {
     await interaction.editReply({

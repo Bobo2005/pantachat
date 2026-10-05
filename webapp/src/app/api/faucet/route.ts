@@ -201,6 +201,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const notifyChat = (sig: string) => {
+      const chatId = body.chatId || body.chat_id;
+      const platform = body.platform || "telegram";
+      if (!chatId) return;
+      const backendUrl =
+        process.env.NEXT_PUBLIC_API_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        "http://localhost:3001";
+
+      fetch(`${backendUrl}/api/faucet/notify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform,
+          chatId,
+          wallet: walletAddress,
+          signature: sig,
+          amount: DISPENSE_SOL,
+        }),
+      }).catch((nErr) => console.warn("[Faucet Notify Warning]:", nErr));
+    };
+
     // Method A: Direct Transfer from Treasury Wallet (100% reliable, no RPC limits)
     if (treasuryKeypair) {
       const treasuryBalance = await connection.getBalance(treasuryKeypair.publicKey);
@@ -221,6 +243,7 @@ export async function POST(req: NextRequest) {
         );
 
         await markClaimed(walletAddress, signature, "treasury_transfer");
+        notifyChat(signature);
 
         return NextResponse.json({
           success: true,
@@ -255,6 +278,7 @@ export async function POST(req: NextRequest) {
       );
 
       await markClaimed(walletAddress, airdropSig, "rpc_airdrop");
+      notifyChat(airdropSig);
 
       return NextResponse.json({
         success: true,

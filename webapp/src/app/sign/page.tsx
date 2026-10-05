@@ -155,7 +155,11 @@ function SigningFlow() {
       const res = await fetch("/api/faucet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: publicKey.toBase58() }),
+        body: JSON.stringify({
+          wallet: publicKey.toBase58(),
+          chatId: queryChatId,
+          platform: queryPlatform,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {

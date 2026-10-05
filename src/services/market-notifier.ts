@@ -2,6 +2,12 @@ import { bot } from "../bot/telegram/client.js";
 import { discordClient } from "../bot/discord/client.js";
 import { buildMarketCardText, getPresetBuyButtons } from "../bot/common/card-builder.js";
 import { buildDiscordMarketCard } from "../bot/discord/embeds.js";
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} from "discord.js";
 import { type Market } from "../db/schema.js";
 import { config } from "../config.js";
 
@@ -231,6 +237,111 @@ export async function broadcastTradeNotification(
       }
     } catch (err: any) {
       console.warn(`⚠️ [Market Notifier] Discord trade confirmation notice error:`, err.message);
+    }
+  }
+}
+
+// =============================================================================
+// Faucet Request Notification Dispatcher
+// =============================================================================
+
+export interface FaucetNotificationParams {
+  platform?: "telegram" | "discord" | string | null;
+  chatId: string;
+  walletAddress: string;
+  amount: number;
+  signature: string;
+  newBalance?: number | null;
+}
+
+/**
+ * Dispatches a formal on-chain Faucet Confirmation receipt to Telegram or Discord
+ * when demo funds are requested and transferred.
+ */
+export async function broadcastFaucetNotification(params: FaucetNotificationParams): Promise<void> {
+  const { platform = "telegram", chatId, walletAddress, amount, signature, newBalance } = params;
+  const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+  const shortWallet = `${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}`;
+
+  // 1. Telegram Confirmation Card
+  if (platform === "telegram") {
+    try {
+      const confirmationText = [
+        `💧 *Devnet Faucet Confirmation*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `✅ *Status:* Demo funds delivered on-chain!`,
+        `💰 *Amount Credited:* *+${amount} SOL*`,
+        `👤 *Recipient Wallet:* \`${walletAddress}\``,
+        newBalance !== undefined && newBalance !== null
+          ? `💳 *Current Balance:* \`${newBalance.toFixed(3)} SOL\``
+          : null,
+        `⏳ *Daily Limit:* 1 request per 24 hours`,
+        ``,
+        `⛓️ [View On-Chain Tx on Solana Explorer](${explorerUrl})`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👇 *Start trading risk-free on PantaChat:*`,
+      ].filter(Boolean).join("\n");
+
+      await bot.telegram.sendMessage(chatId, confirmationText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🔍 View on Explorer", url: explorerUrl },
+              { text: "🚀 Open Markets", url: config.WEBAPP_URL },
+            ],
+          ],
+        },
+      });
+
+      console.log(`✅ [Market Notifier] Telegram faucet confirmation posted to chat ${chatId}`);
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Telegram faucet confirmation error:`, err.message);
+    }
+  }
+
+  // 2. Discord Confirmation Embed & Buttons
+  else if (platform === "discord") {
+    try {
+      const channel = await discordClient.channels.fetch(chatId);
+      if (channel && channel.isTextBased()) {
+        const embed = new EmbedBuilder()
+          .setTitle("💧 Devnet Faucet Confirmation")
+          .setColor(0x10b981)
+          .setDescription("Demo SOL was successfully transferred to your wallet on Solana Devnet.")
+          .addFields(
+            { name: "💰 Amount Credited", value: `+${amount} SOL`, inline: true },
+            { name: "👤 Recipient", value: `\`${shortWallet}\``, inline: true },
+            { name: "🌐 Network", value: "Solana Devnet 🟢", inline: true }
+          );
+
+        if (newBalance !== undefined && newBalance !== null) {
+          embed.addFields({ name: "💳 Current Balance", value: `${newBalance.toFixed(3)} SOL`, inline: true });
+        }
+
+        embed.addFields({ name: "⏳ Daily Limit", value: "1 request per 24 hours", inline: true });
+        embed.setTimestamp();
+
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel("View on Solana Explorer")
+            .setStyle(ButtonStyle.Link)
+            .setURL(explorerUrl),
+          new ButtonBuilder()
+            .setLabel("Open Prediction Markets")
+            .setStyle(ButtonStyle.Link)
+            .setURL(config.WEBAPP_URL)
+        );
+
+        await (channel as any).send({
+          embeds: [embed],
+          components: [row],
+        });
+
+        console.log(`✅ [Market Notifier] Discord faucet confirmation posted to channel ${chatId}`);
+      }
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Discord faucet confirmation error:`, err.message);
     }
   }
 }
