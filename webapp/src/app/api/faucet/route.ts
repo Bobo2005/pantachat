@@ -11,6 +11,9 @@ import {
 import { parseSolanaSecretKey } from "@/lib/base58";
 import { supabase } from "@/lib/supabase";
 
+import fs from "fs";
+import path from "path";
+
 // -----------------------------------------------------------------------------
 // Configuration & Constants
 // -----------------------------------------------------------------------------
@@ -23,28 +26,57 @@ const connection = new Connection(RPC_ENDPOINT, "confirmed");
 const DISPENSE_SOL = parseFloat(process.env.FAUCET_DISPENSE_AMOUNT || "0.25");
 const DISPENSE_LAMPORTS = Math.round(DISPENSE_SOL * LAMPORTS_PER_SOL);
 
-// Rate Limit: 24 Hours in Milliseconds
+// Rate Limit: Exactly 24 Hours (1 Full Day) in Milliseconds
 const RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-// In-Memory Rate Limiting Cache: { walletAddress -> lastClaimTimestamp }
+// Local Persistent File on Disk (survives dev server and process restarts)
+const CLAIMS_FILE = path.join(process.cwd(), ".faucet_claims.json");
+
+function readDiskClaims(): Record<string, number> {
+  try {
+    if (fs.existsSync(CLAIMS_FILE)) {
+      const content = fs.readFileSync(CLAIMS_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch {}
+  return {};
+}
+
+function writeDiskClaim(wallet: string, timestamp: number) {
+  try {
+    const claims = readDiskClaims();
+    claims[wallet] = timestamp;
+    fs.writeFileSync(CLAIMS_FILE, JSON.stringify(claims, null, 2), "utf-8");
+  } catch {}
+}
+
+// In-Memory Rate Limiting Cache for zero-latency lookups
 const inMemoryClaims = new Map<string, number>();
 
 // -----------------------------------------------------------------------------
-// Rate Limit Check
+// Rate Limit Check (Multi-Layer: Memory -> Disk -> Supabase Cloud)
 // -----------------------------------------------------------------------------
 async function checkAndRecordRateLimit(
   walletAddress: string
-): Promise<{ allowed: boolean; remainingHours?: number }> {
+): Promise<{
+  allowed: boolean;
+  remainingHours?: number;
+  remainingMinutes?: number;
+  formattedWait?: string;
+}> {
   const now = Date.now();
-  const lastClaim = inMemoryClaims.get(walletAddress);
+  let lastClaim = inMemoryClaims.get(walletAddress);
 
-  if (lastClaim && now - lastClaim < RATE_LIMIT_WINDOW_MS) {
-    const remainingMs = RATE_LIMIT_WINDOW_MS - (now - lastClaim);
-    const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-    return { allowed: false, remainingHours };
+  // 1. Check local persistent disk storage
+  if (!lastClaim) {
+    const diskClaims = readDiskClaims();
+    if (diskClaims[walletAddress]) {
+      lastClaim = diskClaims[walletAddress];
+      inMemoryClaims.set(walletAddress, lastClaim);
+    }
   }
 
-  // Also check Supabase faucet_claims table if Supabase is connected
+  // 2. Check Supabase cloud database (if configured)
   if (supabase) {
     try {
       const sinceIso = new Date(now - RATE_LIMIT_WINDOW_MS).toISOString();
@@ -57,15 +89,36 @@ async function checkAndRecordRateLimit(
         .limit(1);
 
       if (data && data.length > 0) {
-        const claimTime = new Date(data[0].created_at).getTime();
-        const remainingMs = RATE_LIMIT_WINDOW_MS - (now - claimTime);
-        const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-        inMemoryClaims.set(walletAddress, claimTime);
-        return { allowed: false, remainingHours };
+        const cloudClaimTime = new Date(data[0].created_at).getTime();
+        if (!lastClaim || cloudClaimTime > lastClaim) {
+          lastClaim = cloudClaimTime;
+          inMemoryClaims.set(walletAddress, lastClaim);
+        }
       }
     } catch {
-      // Ignore if table does not exist yet; in-memory cache handles it
+      // Table may not exist yet; disk + memory guarantees protection
     }
+  }
+
+  // 3. Strict 24-hour (1 day) enforcement
+  if (lastClaim && now - lastClaim < RATE_LIMIT_WINDOW_MS) {
+    const remainingMs = RATE_LIMIT_WINDOW_MS - (now - lastClaim);
+    const totalRemainingMinutes = Math.ceil(remainingMs / (1000 * 60));
+    const remainingHours = Math.floor(totalRemainingMinutes / 60);
+    const remainingMinutes = totalRemainingMinutes % 60;
+    const formattedWait =
+      remainingHours > 0
+        ? remainingMinutes > 0
+          ? `${remainingHours} hr ${remainingMinutes} min`
+          : `${remainingHours} hr`
+        : `${remainingMinutes} minutes`;
+
+    return {
+      allowed: false,
+      remainingHours,
+      remainingMinutes,
+      formattedWait,
+    };
   }
 
   return { allowed: true };
@@ -74,6 +127,7 @@ async function checkAndRecordRateLimit(
 async function markClaimed(walletAddress: string, signature: string, method: string) {
   const now = Date.now();
   inMemoryClaims.set(walletAddress, now);
+  writeDiskClaim(walletAddress, now);
 
   if (supabase) {
     try {
@@ -83,11 +137,11 @@ async function markClaimed(walletAddress: string, signature: string, method: str
           amount_sol: DISPENSE_SOL,
           signature,
           method,
-          created_at: new Date().toISOString(),
+          created_at: new Date(now).toISOString(),
         },
       ]);
     } catch {
-      // Non-blocking
+      // Non-blocking if table is being created
     }
   }
 }
@@ -119,13 +173,16 @@ export async function POST(req: NextRequest) {
 
     const walletAddress = recipientPubkey.toBase58();
 
-    // 1. Check Rate Limit (1 claim per 24 hours)
+    // 1. Check Rate Limit (Strictly 1 claim per 24 hours per wallet)
     const rateCheck = await checkAndRecordRateLimit(walletAddress);
     if (!rateCheck.allowed) {
       return NextResponse.json(
         {
-          error: `Daily limit reached. You can claim ${DISPENSE_SOL} SOL once every 24 hours.`,
-          retryInHours: rateCheck.remainingHours,
+          error: `Daily limit reached for this wallet address. You cannot request SOL until after a day (wait ${rateCheck.formattedWait}).`,
+          canClaim: false,
+          remainingHours: rateCheck.remainingHours,
+          remainingMinutes: rateCheck.remainingMinutes,
+          formattedWait: rateCheck.formattedWait,
         },
         { status: 429 }
       );
@@ -233,13 +290,37 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const wallet = searchParams.get("wallet");
+  const checkWallet = searchParams.get("check");
+
+  // Check rate limit eligibility without triggering a claim
+  if (checkWallet) {
+    try {
+      const pubkey = new PublicKey(checkWallet.trim());
+      const rateCheck = await checkAndRecordRateLimit(pubkey.toBase58());
+      return NextResponse.json({
+        wallet: pubkey.toBase58(),
+        canClaim: rateCheck.allowed,
+        remainingHours: rateCheck.remainingHours || 0,
+        remainingMinutes: rateCheck.remainingMinutes || 0,
+        formattedWait: rateCheck.formattedWait || null,
+        message: rateCheck.allowed
+          ? "This wallet is eligible to claim demo SOL."
+          : `Daily limit reached. This wallet cannot request SOL until after a day (wait ${rateCheck.formattedWait}).`,
+      });
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid Solana address format." },
+        { status: 400 }
+      );
+    }
+  }
 
   if (!wallet) {
     return NextResponse.json({
       status: "online",
       network: "devnet",
       dispenseAmount: `${DISPENSE_SOL} SOL`,
-      rateLimit: "1 claim per 24 hours per wallet",
+      rateLimit: "Strictly 1 claim per 24 hours per wallet address",
       hasTreasuryWallet: !!process.env.FAUCET_PRIVATE_KEY,
     });
   }

@@ -390,6 +390,54 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
   await interaction.deferReply();
 
   try {
+    const recipientAddress = pubkey.toBase58();
+
+    // 1. Try central API faucet (enforces 24-hour limit and treasury wallet)
+    let apiSuccess = false;
+    let apiResult: any = null;
+
+    try {
+      const res = await fetch(`${config.WEBAPP_URL}/api/faucet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: recipientAddress }),
+      });
+      apiResult = await res.json();
+
+      if (res.status === 429) {
+        // Strictly rate limited: Cannot request until after a day!
+        await interaction.editReply({
+          content:
+            `⏳ **Daily Limit Reached**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `This wallet address has already claimed demo funds today.\n\n` +
+            `• **Wallet:** \`${recipientAddress}\`\n` +
+            `• **Next Claim Available:** **${apiResult.formattedWait || "after 24 hours"}**\n\n` +
+            `_Rate limit: Each wallet address can only request once every 24 hours._`,
+        });
+        return;
+      }
+
+      if (res.ok && apiResult.success) {
+        apiSuccess = true;
+      }
+    } catch {
+      // Fallback to direct RPC if webapp is starting up
+    }
+
+    if (apiSuccess && apiResult) {
+      await interaction.editReply({
+        content:
+          `✅ **Devnet Funds Dispensed!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `• **Amount:** ${apiResult.amount || 0.25} SOL\n` +
+          `• **Recipient:** \`${recipientAddress}\`\n` +
+          `• **Tx Signature:** \`${apiResult.signature}\`\n\n` +
+          `[View on Solana Explorer](${apiResult.explorerUrl || `https://explorer.solana.com/tx/${apiResult.signature}?cluster=devnet`})\n\n` +
+          `_Note: Next claim will be available after 24 hours._`,
+      });
+      return;
+    }
+
+    // 2. Direct RPC Fallback
     const airdropSig = await solanaConnection.requestAirdrop(pubkey, Math.round(0.25 * LAMPORTS_PER_SOL));
     await waitForConfirmation(airdropSig, 25000);
 
@@ -397,7 +445,7 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
       content:
         `✅ **Devnet Airdrop Successful!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `• **Amount:** 0.25 SOL\n` +
-        `• **Recipient:** \`${pubkey.toBase58()}\`\n` +
+        `• **Recipient:** \`${recipientAddress}\`\n` +
         `• **Tx Signature:** \`${airdropSig}\`\n\n` +
         `[View on Solana Explorer](https://explorer.solana.com/tx/${airdropSig}?cluster=devnet)`,
     });

@@ -22,6 +22,10 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
   const [loading, setLoading] = useState(false);
   const [txSignature, setTxSignature] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [rateLimitStatus, setRateLimitStatus] = useState<{
+    canClaim: boolean;
+    formattedWait?: string;
+  } | null>(null);
 
   // Sync connected wallet address into input
   useEffect(() => {
@@ -32,6 +36,39 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
       }).catch(() => {});
     }
   }, [publicKey, connection, isOpen]);
+
+  // Live 24-hour rate limit check when address changes
+  useEffect(() => {
+    const trimmed = addressInput.trim();
+    if (!trimmed) {
+      setRateLimitStatus(null);
+      return;
+    }
+
+    try {
+      new PublicKey(trimmed);
+    } catch {
+      setRateLimitStatus(null);
+      return;
+    }
+
+    let isMounted = true;
+    fetch(`/api/faucet?check=${trimmed}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data.canClaim !== undefined) {
+          setRateLimitStatus({
+            canClaim: data.canClaim,
+            formattedWait: data.formattedWait,
+          });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [addressInput, isOpen]);
 
   if (!isOpen) return null;
 
@@ -69,6 +106,7 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
       }
 
       setTxSignature(data.signature);
+      setRateLimitStatus({ canClaim: false, formattedWait: "23 hr 59 min" });
 
       // Trigger Confetti!
       try {
@@ -198,10 +236,23 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
           </div>
         )}
 
+        {/* Daily limit reached warning */}
+        {rateLimitStatus && !rateLimitStatus.canClaim && !txSignature && (
+          <div className="p-3 mb-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2.5">
+            <span className="text-base shrink-0">⏳</span>
+            <div className="space-y-0.5">
+              <div className="font-semibold text-amber-200">Daily Limit Reached</div>
+              <div className="text-[11px] text-amber-300/80 leading-relaxed">
+                This wallet has already claimed demo funds. Each wallet is strictly limited to 1 claim every 24 hours. Next claim available in <strong>{rateLimitStatus.formattedWait}</strong>.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Button */}
         <button
           onClick={handleClaim}
-          disabled={loading || !targetAddress}
+          disabled={loading || !targetAddress || (rateLimitStatus !== null && !rateLimitStatus.canClaim)}
           className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-xs text-white transition flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20"
         >
           {loading ? (
@@ -209,6 +260,8 @@ export function DemoFundsModal({ isOpen, onClose, onSuccess }: DemoFundsModalPro
               <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               <span>Dispensing 0.25 SOL...</span>
             </>
+          ) : rateLimitStatus && !rateLimitStatus.canClaim ? (
+            <span>⏳ Next Claim in {rateLimitStatus.formattedWait}</span>
           ) : (
             <>
               <span>💧</span>

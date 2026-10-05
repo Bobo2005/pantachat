@@ -34,3 +34,5 @@ Thumbs.db
 .vscode/
 .idea/
 scratch/
+.faucet_claims.json
+*.faucet_claims.json
