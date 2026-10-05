@@ -18,6 +18,7 @@ import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { config } from "../../config.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
 import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
+import { createTradeSession } from "../../api/panta/trading.js";
 import { getMarketById } from "../../api/panta/markets.js";
 import { buildDiscordMarketCard } from "./embeds.js";
 import { registerDiscordInteractions } from "./interactions.js";
@@ -40,6 +41,23 @@ export const commandDefinitions = [
         .setName("query")
         .setDescription("Prediction question, proposition, or market ID")
         .setRequired(false)
+    ),
+
+  // 1b. Slash Command: /bet [market_id] [outcome] [amount]
+  new SlashCommandBuilder()
+    .setName("bet")
+    .setDescription("Place a custom amount prediction bet on a market")
+    .addStringOption((opt) =>
+      opt.setName("market_id").setDescription("The market ID to bet on").setRequired(true)
+    )
+    .addStringOption((opt) =>
+      opt.setName("outcome").setDescription("Outcome to bet on (yes or no)").setRequired(true).addChoices(
+        { name: "YES", value: "yes" },
+        { name: "NO", value: "no" }
+      )
+    )
+    .addNumberOption((opt) =>
+      opt.setName("amount").setDescription("Amount in USDC to bet (e.g. 15, 50, 100)").setRequired(true).setMinValue(0.1)
     ),
 
   // 2. Slash Command: /positions
@@ -219,6 +237,50 @@ async function processBanterDraft(
 /**
  * Handle /market [query]
  */
+/**
+ * Handle /bet (Custom Bet Command)
+ */
+async function handleBetCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const marketId = interaction.options.getString("market_id", true);
+  const outcome = (interaction.options.getString("outcome", true).toLowerCase() as "yes" | "no");
+  const amount = interaction.options.getNumber("amount", true);
+
+  const platformUserId = interaction.user.username || interaction.user.id;
+  const chatId = interaction.channelId;
+
+  try {
+    const session = await createTradeSession({
+      platformUserId,
+      platform: "discord",
+      chatId,
+      marketId,
+      outcome,
+      amountUsdc: amount,
+    });
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel(`⚡ Sign ${amount} ${outcome.toUpperCase()} (Phantom)`)
+        .setStyle(ButtonStyle.Link)
+        .setURL(`${session.signUrl}&custom=true`)
+    );
+
+    await interaction.reply({
+      content:
+        `🎯 **Ready to place bet:** ${amount} on **${outcome.toUpperCase()}**\n` +
+        `Market: \`${marketId}\`\n` +
+        `Click below to review odds and sign non-custodially in Phantom:`,
+      components: [row],
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (err: any) {
+    await interaction.reply({
+      content: `❌ **Failed to initiate bet session:** ${err.message || "Unknown error"}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
 async function handleMarketCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   const query = interaction.options.getString("query");
 
@@ -514,6 +576,9 @@ export function registerDiscordCommands(client: Client): void {
         switch (interaction.commandName) {
           case "market":
             await handleMarketCommand(interaction);
+            break;
+          case "bet":
+            await handleBetCommand(interaction);
             break;
           case "positions":
             await handlePositionsCommand(interaction);

@@ -131,6 +131,9 @@ function SigningFlow() {
   const [duplicateMarket, setDuplicateMarket] = useState<any>(null);
 
   // Devnet SOL balance & quick faucet claim state
+  const [activeAmount, setActiveAmount] = useState<number>(queryAmount || 20);
+  const [customAmountStr, setCustomAmountStr] = useState<string>(String(queryAmount || 20));
+  const [isEditingAmount, setIsEditingAmount] = useState<boolean>(searchParams.get("custom") === "true");
   const [userSolBalance, setUserSolBalance] = useState<number | null>(null);
   const [claimingSol, setClaimingSol] = useState<boolean>(false);
   const [faucetNotice, setFaucetNotice] = useState<string | null>(null);
@@ -493,7 +496,7 @@ function SigningFlow() {
         const memoProgramId = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
         const actionMemo = isCreateSession
           ? `PantaChat:CreateMarket:${session?.payload?.title || queryTitle || "Market"}`
-          : `PantaChat:Order:${session?.payload?.outcome || queryOutcome}:${session?.payload?.amountUsdc || queryAmount}USDC`;
+          : `PantaChat:Order:${session?.payload?.outcome || queryOutcome}:${activeAmount || session?.payload?.amountUsdc || queryAmount}USDC`;
 
         const memoInstruction = new TransactionInstruction({
           keys: [{ pubkey: publicKey, isSigner: true, isWritable: true }],
@@ -575,7 +578,7 @@ function SigningFlow() {
             yesPrice: 0.5,
             noPrice: 0.5,
           };
-          const tradeCost = Number((session?.payload as any)?.amountUsdc || queryAmount || 20);
+          const tradeCost = Number(activeAmount || (session?.payload as any)?.amountUsdc || queryAmount || 20);
           const price = outcomeLower === "yes" ? (targetMarket.yesPrice || 0.5) : (targetMarket.noPrice || 0.5);
           const estShares = Math.floor(tradeCost / price);
 
@@ -618,7 +621,7 @@ function SigningFlow() {
         description: session?.payload?.description || session?.market?.description || queryDesc,
         category: session?.payload?.category || session?.market?.category || queryCategory,
         outcome: (session?.payload as any)?.outcome || queryOutcome,
-        amount: (session?.payload as any)?.amountUsdc || queryAmount,
+        amount: activeAmount || (session?.payload as any)?.amountUsdc || queryAmount,
       };
 
       try {
@@ -684,7 +687,7 @@ function SigningFlow() {
     "Crypto";
 
   const outcome = session?.payload?.outcome || queryOutcome;
-  const amountUsdc = session?.payload?.amountUsdc || queryAmount;
+  const amountUsdc = activeAmount || session?.payload?.amountUsdc || queryAmount;
   const isOutcomeYes = outcome.toLowerCase() === "yes";
 
   return (
@@ -760,6 +763,67 @@ function SigningFlow() {
                   <span className="font-mono font-bold px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     CREATE PREDICTION MARKET
                   </span>
+                </div>
+
+                {/* Custom Amount Adjuster */}
+                <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-400 font-medium">Bet Size</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingAmount(!isEditingAmount)}
+                      className="text-[#38bdf8] text-[11px] hover:underline cursor-pointer flex items-center gap-1"
+                    >
+                      <span>{isEditingAmount ? "Hide Custom Input" : "✏️ Custom Amount"}</span>
+                    </button>
+                  </div>
+
+                  {isEditingAmount && (
+                    <div className="flex flex-col gap-2 pt-1 border-t border-[#1e2638]/60">
+                      <div className="relative flex items-center">
+                        <span className="absolute left-2.5 font-mono text-xs font-semibold text-slate-400">$</span>
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="any"
+                          value={customAmountStr}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setCustomAmountStr(val);
+                            const parsed = parseFloat(val);
+                            if (!isNaN(parsed) && parsed > 0) {
+                              setActiveAmount(parsed);
+                            }
+                          }}
+                          placeholder="Custom amount..."
+                          className="w-full bg-[#121721] border border-[#1e2638] rounded py-1.5 pl-6 pr-14 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-[#38bdf8]"
+                        />
+                        <span className="absolute right-2 font-mono text-[10px] font-semibold text-[#38bdf8] bg-[#38bdf8]/10 px-1.5 py-0.5 rounded">
+                          USDC
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-1">
+                        {[5, 10, 20, 50, 100].map((amt) => (
+                          <button
+                            key={amt}
+                            type="button"
+                            onClick={() => {
+                              setActiveAmount(amt);
+                              setCustomAmountStr(String(amt));
+                            }}
+                            className={`py-1 rounded text-[11px] font-mono transition cursor-pointer ${
+                              activeAmount === amt && customAmountStr === String(amt)
+                                ? "bg-[#181f2c] text-[#38bdf8] border border-[#38bdf8] font-bold"
+                                : "bg-[#121721] text-slate-400 border border-[#1e2638] hover:text-white"
+                            }`}
+                          >
+                            ${amt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">

@@ -1,7 +1,7 @@
 # PantaChat: Developer Handoff & Quickstart Guide
 **Project:** PantaChat (Colosseum Crypto World's Fair & Panta Sidetrack)  
-**Status:** MVP Ready for Code Generation  
-**Last Updated:** October 2, 2026
+**Status:** MVP Fully Functional & Responsive (Desktop, Mobile, Telegram Mini App)  
+**Last Updated:** October 5, 2026
 
 ---
 
@@ -13,7 +13,7 @@ Copy the following to `.env` in the project root:
 # ==========================================
 # PANTA API CONFIGURATION
 # ==========================================
-# Default: Staging / Devnet (Zero-cost hackathon test mode)
+# Default: Staging / Devnet (Zero-cost test mode)
 PANTA_API_BASE_URL=https://staging-api.panta.market/api/v1
 PANTA_API_KEY=pk_test_your_staging_key_here
 
@@ -26,8 +26,15 @@ PANTA_API_KEY=pk_test_your_staging_key_here
 # ==========================================
 SOLANA_NETWORK=devnet
 SOLANA_RPC_URL=https://api.devnet.solana.com
-# Optional: Alchemy / QuickNode / Helius RPC for lower latency
-# SOLANA_RPC_URL=https://devnet.helius-rpc.com/?api-key=...
+# Private key array or base58 string used by the demo faucet
+FAUCET_PRIVATE_KEY=[12,34,...]
+
+# ==========================================
+# SUPABASE DATABASE & CLOUD STORAGE
+# ==========================================
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
 
 # ==========================================
 # BOT CREDENTIALS
@@ -41,7 +48,7 @@ DISCORD_BOT_TOKEN=your_discord_bot_token_here
 DISCORD_CLIENT_ID=your_discord_client_id_here
 
 # ==========================================
-# AI AGENT DRAFTER (Claude Sonnet 5.5 - claude-sonnet-5-5)
+# AI AGENT DRAFTER (Claude Sonnet 5.5)
 # ==========================================
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ANTHROPIC_MODEL=claude-sonnet-5-5
@@ -52,18 +59,37 @@ ANTHROPIC_MODEL=claude-sonnet-5-5
 PORT=3001
 WEBAPP_PORT=3000
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-# For Telegram Mini App in production / ngrok:
+# For Telegram Mini App in production / tunnel:
 # NEXT_PUBLIC_APP_URL=https://xxxx.ngrok-free.app
-
-# ==========================================
-# DATABASE
-# ==========================================
-DATABASE_URL=file:./pantachat.db
 ```
 
 ---
 
-## 2. Quickstart Commands
+## 2. Completed Architecture & Milestones
+
+1. **Market Deduplication Engine**:
+   - Integrates Supabase lookup before any market creation transaction is signed.
+   - Prevents duplicate questions across WebApp, Telegram Bot (`/create`), and Discord Bot.
+2. **Soft Archiving (Market History)**:
+   - When markets resolve, status transitions to `resolved` and outcome is recorded (`yes` / `no`).
+   - Automatically migrates from the active explorer feed into a dedicated **Past / History** tab.
+   - Preserves user positions and claims permanently.
+3. **Frictionless Demo Funds Faucet**:
+   - Allows users to claim Devnet SOL directly to their connected Solana address without GitHub verification.
+   - Backend enforces a 24-hour rate limit per address.
+   - Triggers cross-platform confirmation alerts in Telegram and Discord containing explorer links.
+4. **Universal Responsive Design**:
+   - Optimized for Desktop ($\ge 1024\text{px}$), Tablet ($768\text{px}$), and Mobile / Telegram Mini App ($360\text{px}$–$430\text{px}$).
+   - Viewport stabilization (`viewportFit: "cover"`, anti-zoom).
+   - Fixed mobile bottom navigation bar (`Explorer`, `Positions`, `✨ Create`, `Royalties`, `Faucet`).
+   - Mobile-first card view for open positions and winnings claims.
+5. **Security & Deployment Hygiene**:
+   - Clean git state with strictly ignored `.env` and `.env.local`.
+   - Vercel-ready WebApp and Render-ready bot/backend.
+
+---
+
+## 3. Quickstart Commands
 
 ### 1. Install Dependencies
 ```bash
@@ -74,21 +100,15 @@ npm install
 cd webapp && npm install && cd ..
 ```
 
-### 2. Run Database Migrations
-```bash
-npx drizzle-kit push
-```
-
-### 3. Start Local Services
-You will typically run two terminals:
+### 2. Start Local Services
 
 **Terminal 1 (Telegram & Discord Bot + Express API):**
 ```bash
 npm run dev
-# Starts src/index.ts via tsx / nodemon
+# Starts src/index.ts via tsx / nodemon on port 3001
 ```
 
-**Terminal 2 (Next.js Telegram Mini App & Signing Portal):**
+**Terminal 2 (Next.js WebApp & Telegram Mini App):**
 ```bash
 cd webapp
 npm run dev
@@ -97,31 +117,31 @@ npm run dev
 
 ---
 
-## 3. Testing on Devnet ($0 Cost)
+## 4. Evaluator Verification Flow (Devnet & Staging)
 
-1. **Free Devnet SOL:**
-   - Request test SOL using the Solana CLI: `solana airdrop 2 <YOUR_WALLET> --url devnet`
-   - Or via web faucet: `https://faucet.solana.com/`
-2. **Staging Panta Markets:**
-   - The staging API at `https://staging-api.panta.market/api/v1` comes pre-populated with ~50 active test markets across Crypto, Sports, and Tech.
-   - You can test quotes and builds immediately with zero real funds.
-
----
-
-## 4. Judge & Evaluator Verification Flow (Devnet & Staging)
-
-The entire application runs on the Panta staging environment and Solana Devnet at zero financial cost:
-
-* **Staging API:** Pre-seeded with 50 live prediction markets across Crypto, Sports, and Tech.
-* **1-Tap Non-Custodial Devnet Signing:** Judges connect Phantom/Solflare on Devnet (or use pre-funded devnet wallets) to experience real on-chain transaction generation, signing, SPL memo attribution, and live card updates with real test USDC.
-* **No Real Funds Required:** Devnet SOL and test tokens allow judges to verify the full creation, trading, and claim lifecycle on actual Solana infrastructure.
+1. **Free Devnet SOL via Built-in Faucet:**
+   - Open WebApp and click the **💧 Faucet** button in the header or bottom bar.
+   - Enter your Phantom/Solflare address or use the `/faucet <wallet>` command in chat.
+   - Receives Devnet SOL instantly without requiring any OAuth or GitHub account.
+2. **Explore Active & Past Markets:**
+   - View active markets with real-time bonding curves.
+   - Switch to the **Past / History** tab to view settled markets.
+3. **Non-Custodial Trading:**
+   - Click YES or NO on any market card $\to$ select preset amount $\to$ Confirm & Sign.
+   - Compiles versioned transaction and signs directly with Phantom/Solflare.
+4. **Claim Winnings & Royalties:**
+   - Navigate to **Positions** to claim resolved market winnings.
+   - Navigate to **Royalties** to view creator fees accrued.
 
 ---
 
 ## 5. Submission Checklist (Colosseum & Superteam Earn)
 
-- [ ] Ensure all 12/12 Panta API routes are wired and functional.
-- [ ] Record the 2-minute demo video following `pantachat_plan_v3.md` (Section 7).
-- [ ] Push clean code to GitHub repository with open-source license.
-- [ ] Submit to **Colosseum Crypto World's Fair**.
-- [ ] Submit to **Panta API Sidetrack on Superteam Earn**.
+- [x] Market deduplication and soft-archiving active.
+- [x] Zero-friction Devnet faucet active with 24h limit.
+- [x] Responsive layout tested on desktop, mobile, and TMA.
+- [x] Zero sensitive secrets in git tracking.
+- [x] WebApp builds cleanly with `next build`.
+- [ ] Push repository to GitHub.
+- [ ] Deploy WebApp to Vercel and Backend to Render.
+- [ ] Submit to **Colosseum Crypto World's Fair** and **Panta API Sidetrack**.

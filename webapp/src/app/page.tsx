@@ -68,6 +68,7 @@ export default function MarketExplorer() {
   const [activeModalMarket, setActiveModalMarket] = useState<MarketItem | null>(null);
   const [selectedOutcome, setSelectedOutcome] = useState<"yes" | "no">("yes");
   const [spendAmount, setSpendAmount] = useState<number>(20);
+  const [customInput, setCustomInput] = useState<string>("20");
 
   // Fetch Real Dynamic Markets from Backend / Panta Protocol
   const fetchMarkets = async () => {
@@ -115,12 +116,18 @@ export default function MarketExplorer() {
     setActiveModalMarket(market);
     setSelectedOutcome(outcome);
     setSpendAmount(20);
+    setCustomInput("20");
   };
 
   const handleProceedToSign = () => {
     if (!activeModalMarket) return;
+    const finalAmount = parseFloat(customInput) || spendAmount || 0;
+    if (finalAmount <= 0) {
+      alert("Please enter a valid amount greater than $0.");
+      return;
+    }
     const sessionId = `sess_buy_${Date.now()}`;
-    window.location.href = `/sign?session=${sessionId}&market=${activeModalMarket.id}&outcome=${selectedOutcome}&amount=${spendAmount}`;
+    window.location.href = `/sign?session=${sessionId}&market=${activeModalMarket.id}&outcome=${selectedOutcome}&amount=${finalAmount}`;
   };
 
   return (
@@ -629,18 +636,49 @@ export default function MarketExplorer() {
               </button>
             </div>
 
-            {/* Spend Amount Presets */}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-mono text-slate-400">Amount (USDC)</label>
-              <div className="grid grid-cols-4 gap-2">
-                {[5, 20, 50, 100].map((amt) => (
+            {/* Spend Amount Input & Presets */}
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <label className="text-slate-400 font-medium">Bet Amount (USDC)</label>
+                <span className="text-[11px] text-slate-500">Custom or Preset</span>
+              </div>
+
+              {/* Number Input Field */}
+              <div className="relative flex items-center">
+                <span className="absolute left-3 font-mono text-sm font-semibold text-slate-400">$</span>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  value={customInput}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomInput(val);
+                    const parsed = parseFloat(val);
+                    setSpendAmount(isNaN(parsed) ? 0 : parsed);
+                  }}
+                  placeholder="Enter custom amount..."
+                  className="w-full bg-[#121721] border border-[#1e2638] rounded-lg py-2.5 pl-8 pr-16 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:border-[#38bdf8] transition shadow-inner"
+                />
+                <span className="absolute right-3 font-mono text-xs font-semibold text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 rounded border border-[#38bdf8]/20">
+                  USDC
+                </span>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="grid grid-cols-5 gap-1.5">
+                {[5, 10, 20, 50, 100].map((amt) => (
                   <button
                     key={amt}
-                    onClick={() => setSpendAmount(amt)}
+                    type="button"
+                    onClick={() => {
+                      setSpendAmount(amt);
+                      setCustomInput(String(amt));
+                    }}
                     className={`py-1.5 rounded text-xs font-mono font-medium transition cursor-pointer ${
-                      spendAmount === amt
-                        ? "bg-[#181f2c] text-white border border-[#38bdf8]"
-                        : "bg-[#121721] text-slate-400 border border-[#1e2638] hover:text-white"
+                      spendAmount === amt && customInput === String(amt)
+                        ? "bg-[#181f2c] text-[#38bdf8] border border-[#38bdf8] shadow-sm shadow-[#38bdf8]/10 font-bold"
+                        : "bg-[#121721] text-slate-400 border border-[#1e2638] hover:text-white hover:border-slate-600"
                     }`}
                   >
                     ${amt}
@@ -650,24 +688,29 @@ export default function MarketExplorer() {
             </div>
 
             {/* Summary Payout Estimation */}
-            <div className="bg-[#121721] p-3 rounded-lg border border-[#1e2638] flex flex-col gap-1.5 text-xs font-mono">
-              <div className="flex justify-between text-slate-400">
-                <span>Est. Shares:</span>
-                <span className="text-white">
-                  {(spendAmount / (selectedOutcome === "yes" ? activeModalMarket.yesPrice : activeModalMarket.noPrice)).toFixed(2)} shares
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Est. Payout if Won:</span>
-                <span className="text-emerald-400 font-bold">
-                  ${(spendAmount / (selectedOutcome === "yes" ? activeModalMarket.yesPrice : activeModalMarket.noPrice)).toFixed(2)} USDC
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-500 text-[10px] pt-1 border-t border-[#1e2638]">
-                <span>Bonding Royalty Fee:</span>
-                <span>0.50%</span>
-              </div>
-            </div>
+            {(() => {
+              const activePrice = selectedOutcome === "yes" ? activeModalMarket.yesPrice : activeModalMarket.noPrice;
+              const validAmount = parseFloat(customInput) || 0;
+              const estShares = activePrice > 0 && validAmount > 0 ? (validAmount / activePrice).toFixed(2) : "0.00";
+              const estPayout = activePrice > 0 && validAmount > 0 ? (validAmount / activePrice).toFixed(2) : "0.00";
+
+              return (
+                <div className="bg-[#121721] p-3 rounded-lg border border-[#1e2638] flex flex-col gap-1.5 text-xs font-mono">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Est. Shares:</span>
+                    <span className="text-white font-medium">{estShares} shares</span>
+                  </div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Est. Payout if Won:</span>
+                    <span className="text-emerald-400 font-bold">${estPayout} USDC</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500 text-[10px] pt-1 border-t border-[#1e2638]">
+                    <span>Bonding Royalty Fee:</span>
+                    <span>0.50%</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Action Buttons */}
             <div className="flex items-center gap-3 pt-2">

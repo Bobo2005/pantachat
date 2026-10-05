@@ -1,5 +1,5 @@
 # PantaChat: AI Agent Memory & Technical Invariants
-**File Purpose:** Permanent technical memory for AI coding agents generating and debugging PantaChat.
+**File Purpose:** Permanent technical memory for AI coding agents generating, maintaining, and debugging PantaChat.
 
 ---
 
@@ -33,7 +33,6 @@ Orders must strictly follow:
 
 ### 4. Trade Attribution (Explicit POST /trades/ Reporting)
 * Explicitly report every confirmed trade via `POST /trades/` with `{ signature, userId, marketId }` (where `userId: usr_<uuid>` is a pseudonymous UUID for the Telegram/Discord user).
-* Note on SPL Memo: While Panta documentation mentions buys with attribution memos can be ingested, automatic SPL Memo injection by `POST /primaryorderbuild/` is unverified. Treat automatic memo injection as an open question for Panta, and always rely on the explicit `POST /trades/` endpoint for attribution.
 * Always wait for Solana RPC `confirmed` status before calling `POST /trades/` to prevent `TX_NOT_FOUND`.
 
 ### 5. Creator Fees & Graduation Rules
@@ -52,43 +51,61 @@ Orders must strictly follow:
 
 ---
 
-## 2. Environment & Endpoints Configuration
+## 2. Supabase Persistence & Lifecycle Invariants
+
+### 1. Market Deduplication Invariant
+* **Strict Check Before Create:** Before any market is created (from WebApp, Telegram Bot, or Discord Bot), the system must query Supabase to verify that an identical question does not already exist.
+* If a market exists:
+  * Return a helpful error with a link to trade on the existing market.
+  * Prevent duplicate transaction building and avoid unnecessary gas / API calls.
+
+### 2. Soft Archiving (Market History) Invariant
+* **No Hard Deletion:** Resolved markets are NEVER deleted from the database.
+* When a market resolves:
+  1. Update `phase` to `resolved` and record `resolved_outcome` (`yes` or `no`).
+  2. The Explorer feed filters out resolved markets from the active view by default.
+  3. Resolved markets are displayed in the **Past / History** tab.
+  4. The deduplication index retains the question forever to prevent identical duplicate markets from ever being re-created.
+  5. Winning positions remain permanently claimable via `/positions`.
+
+### 3. Frictionless Demo Faucet Invariant
+* **No Third-Party OAuth Dependency:** Faucet dispenser operates via direct Devnet SOL transfer from the backend keypair (`FAUCET_PRIVATE_KEY`).
+* **24-Hour Cooldown:** Enforce a strict 24-hour rate limit per Solana wallet address recorded in Supabase (`faucet_claims`).
+* **Bot Notification Dispatch:** Whenever a claim completes successfully, dispatch an event or alert to Telegram and Discord channels with the Solscan transaction link.
+
+---
+
+## 3. Responsive UI & Telegram Mini App (TMA) Invariants
+
+### 1. Safe Viewport Settings
+* Mobile viewports must have `viewportFit: "cover"`, `userScalable: false`, and `maximumScale: 1` in `layout.tsx` to prevent accidental zooming and clipping in mobile browser webviews.
+
+### 2. Mobile Bottom Navigation Spacing
+* When mobile bottom navigation (`h-14`) is present on screens `< 768px`, page containers must include bottom padding `pb-20 md:pb-12` so content and footers are never obscured.
+
+### 3. Modal Overflow Protection
+* All modal overlays (`CreateMarketModal`, `DemoFundsModal`, `QuickBuyModal`) must have `max-h-[92vh]` and `overflow-y-auto` so buttons remain accessible on small smartphone screens and when mobile software keyboards are active.
+
+---
+
+## 4. Environment & Endpoints Configuration
 
 * **Staging / Devnet URL (Default):** `https://staging-api.panta.market/api/v1`
-  * Self-registration: `POST /auth/register/` (No KYC, instant `pk_test_...` issuance).
   * Devnet Solana RPC: `https://api.devnet.solana.com`
-  * USDC Mint (Devnet): Staging mock USDC.
 * **Production / Mainnet URL (1-Line Toggle):** `https://live-api.panta.market/api/v1`
   * Set `PANTA_API_BASE_URL=https://live-api.panta.market/api/v1` in `.env`.
   * Set `SOLANA_RPC_URL=https://api.mainnet-beta.solana.com`.
 
 ---
 
-## 3. Platform-Specific Implementation Rules
-
-### Telegram
-* Use `Telegraf` framework.
-* Use `InlineKeyboardMarkup` for interactive market cards with preset buttons (`$5`, `$20`, and `Custom`).
-* Update cards in-place using `ctx.editMessageText(newText, { reply_markup })` to refresh the visual odds bar and button prices simultaneously without chat spam (do NOT use `editMessageReplyMarkup` alone as the odds bar lives in the message text).
-* Use Telegram Mini App (`web_app: { url }`) for signing, with an explicit "Open in External Browser" fallback link to ensure Phantom/Solflare mobile deep-linking works smoothly if the in-app webview restricts wallet adapters.
-* Markets in `phase: secondary` must display a link-out (`Trade on Panta`) instead of buy buttons, since primary order endpoints only operate on `phase: primary` bonding curves.
-* Bot deep-links: `https://t.me/PantaChatBot?start=market_<marketId>` to onboard new group members into private DMs.
-
-### Discord
-* Use `discord.js` v14+.
-* For Reply-to-Create: Use Message Context Menu command (`ApplicationCommandType.Message`) labeled "Make a prediction market".
-  * *Reason:* Does NOT require Discord's privileged `MessageContent` bot intent.
-* Use `MessageFlags.Ephemeral` for `/positions` and `/earnings` so personal balances remain private in public servers.
-* Use rich embeds with status color coding (Green: Primary, Purple: Secondary, Grey: Resolved).
-
----
-
-## 4. Common Error Codes & Mitigations
+## 5. Common Error Codes & Mitigations
 
 | Error Code | Cause | Automated Mitigation |
 |---|---|---|
+| `DUPLICATE_MARKET` | Market question was already launched | Intercept and return link to existing market card |
+| `FAUCET_COOLDOWN` | Wallet requested funds <24h ago | Display countdown time until next eligible faucet claim |
 | `QUOTE_STALE` | Price shifted on bonding curve during user signing delay | Mini App automatically fetches fresh quote and updates stepper with 1-tap re-sign |
 | `RATE_LIMIT_EXCEEDED` | Exceeded 20/min build or 120/min read | Request queued in Bottleneck rate limiter with exponential backoff (jitter) |
 | `MARKET_NOT_GRADUATED` | Called creator fee claim before secondary phase | UI disables button and displays progress bar: `Liquidity: $X / $10,000 to Graduation` |
-| `TX_NOT_FOUND` | Reported trade to `/trades/` before RPC confirmed | Verify poller awaits Solana RPC commitment `confirmed` (or up to 30s timeout) before calling `/trades/` |
+| `TX_NOT_FOUND` | Reported trade to `/trades/` before RPC confirmed | Verify poller awaits Solana RPC commitment `confirmed` before calling `/trades/` |
 | `INVALID_CUTOFF` | Market resolution date is in past or <30m | AI Drafter validates `cutoffAt > Date.now() + 30 * 60 * 1000` before calling create quote |

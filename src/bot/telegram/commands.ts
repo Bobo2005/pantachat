@@ -2,6 +2,7 @@ import { type Telegraf, type Context } from "telegraf";
 import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
 import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
+import { createTradeSession } from "../../api/panta/trading.js";
 import { getMarketById } from "../../api/panta/markets.js";
 import { buildMarketCardText, getPresetBuyButtons } from "../common/card-builder.js";
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
@@ -77,6 +78,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       ``,
       `📌 *Commands:*`,
       `• \`/market [text]\` — Draft a prediction market from chat banter`,
+      `• \`/bet <id> <yes|no> <amount>\` — Place a custom bet on any market`,
       `• \`/positions\` — View your active bets and claimable payouts`,
       `• \`/earnings\` — Check creator royalties & claim graduated fees`,
       `• \`/leaderboard\` — Top predictors by volume & win rate`,
@@ -210,6 +212,108 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
   bot.command("market", handleMarketDraft);
   bot.command("create", handleMarketDraft);
+
+  // ---------------------------------------------------------------------------
+  // /bet & /buy (Custom Amount Bet Command)
+  // Usage: /bet [marketId] <yes|no> <amount> or replying to a card: /bet yes 50
+  // ---------------------------------------------------------------------------
+  const handleCustomBetCommand = async (ctx: Context) => {
+    const text = (ctx.message as any)?.text || "";
+    const cleanArgs = text.replace(/^\/(bet|buy)(@\w+)?\s*/i, "").trim();
+
+    // Check if replying to a market card to extract marketId
+    let marketId = "";
+    const replyMsg = (ctx.message as any)?.reply_to_message;
+    if (replyMsg && replyMsg.text) {
+      const match = replyMsg.text.match(/Market ID:\s*`?([a-zA-Z0-9_\-]+)`?/i) ||
+                    replyMsg.text.match(/([a-zA-Z0-9_\-]{15,})/);
+      if (match) marketId = match[1];
+    }
+
+    const parts = cleanArgs.split(/\s+/).filter(Boolean);
+    let outcome: "yes" | "no" = "yes";
+    let amount = 20;
+
+    for (const part of parts) {
+      const p = part.toLowerCase();
+      if (p === "yes" || p === "y") {
+        outcome = "yes";
+      } else if (p === "no" || p === "n") {
+        outcome = "no";
+      } else if (/^\$?\d+(\.\d+)?$/.test(p)) {
+        amount = parseFloat(p.replace("$", ""));
+      } else if (p.length > 5 && !marketId) {
+        marketId = p;
+      }
+    }
+
+    if (!marketId) {
+      return ctx.reply(
+        [
+          "🎯 *Custom Bet Command*",
+          "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+          "Bet any custom amount on any prediction market!",
+          "",
+          "*Usage:* `/bet <marketId> <yes|no> <amount>`",
+          "*Or reply to a market card with:* `/bet yes 50`",
+          "",
+          "_Example:_ `/bet mkt_arsenal_chelsea yes 75`",
+        ].join("\n"),
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    if (amount <= 0 || isNaN(amount)) {
+      return ctx.reply("⚠️ Please specify a valid amount greater than $0 (e.g. /bet " + marketId + " yes 25).");
+    }
+
+    try {
+      const platformUserId = ctx.from?.username || String(ctx.from?.id || "unknown");
+      const chatId = String(ctx.chat?.id || "");
+
+      const session = await createTradeSession({
+        platformUserId,
+        platform: "telegram",
+        chatId,
+        marketId,
+        outcome,
+        amountUsdc: amount,
+      });
+
+      const signUrl = `${session.signUrl}&custom=true`;
+
+      return ctx.reply(
+        `🎯 *Ready to place bet:* ${amount} on *${outcome.toUpperCase()}*\n` +
+          `Market: \`${marketId}\`\n\n` +
+          `Tap below to review odds and sign non-custodially in Phantom:`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: `⚡ Sign ${amount} ${outcome.toUpperCase()} (Mini App)`,
+                  web_app: { url: signUrl },
+                },
+              ],
+              [
+                {
+                  text: "🌐 Open in External Browser",
+                  url: signUrl,
+                },
+              ],
+            ],
+          },
+        }
+      );
+    } catch (err: any) {
+      return ctx.reply(`❌ Failed to create bet session: ${err.message || "Unknown error"}`);
+    }
+  };
+
+  bot.command("bet", handleCustomBetCommand);
+  bot.command("buy", handleCustomBetCommand);
+
 
   // ---------------------------------------------------------------------------
   // /positions
