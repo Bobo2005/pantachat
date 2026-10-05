@@ -11,6 +11,7 @@ export interface LiveMarket {
   description: string;
   creator: string;
   phase: "primary" | "secondary" | "resolved";
+  resolvedOutcome?: "yes" | "no";
   yesPrice: number;
   noPrice: number;
   volumeUsdc: number;
@@ -79,6 +80,7 @@ export async function getAllLiveMarketsAsync(): Promise<LiveMarket[]> {
           description: m.description || "",
           creator: m.creator || "Community Predictor",
           phase: m.phase || "primary",
+          resolvedOutcome: m.resolved_outcome || m.resolvedOutcome,
           yesPrice: Number(m.yes_price ?? m.yesPrice ?? 0.5),
           noPrice: Number(m.no_price ?? m.noPrice ?? 0.5),
           volumeUsdc: Number(m.volume_usdc ?? m.volumeUsdc ?? 50),
@@ -148,6 +150,7 @@ export async function findDuplicateMarketAsync(title: string): Promise<LiveMarke
             description: found.description || "",
             creator: found.creator || "Community Predictor",
             phase: found.phase || "primary",
+            resolvedOutcome: found.resolved_outcome || found.resolvedOutcome,
             yesPrice: Number(found.yes_price ?? found.yesPrice ?? 0.5),
             noPrice: Number(found.no_price ?? found.noPrice ?? 0.5),
             volumeUsdc: Number(found.volume_usdc ?? found.volumeUsdc ?? 50),

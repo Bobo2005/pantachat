@@ -102,6 +102,30 @@ export async function updateMarketPhase(
     .set(updateData)
     .where(eq(markets.id, id))
     .returning();
+
+  // Sync lifecycle phase and resolution to Supabase
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (supabaseUrl && supabaseKey) {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/markets?id=eq.${id}`, {
+        method: "PATCH",
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          phase,
+          resolved_outcome: resolvedOutcome || null,
+        }),
+      });
+    } catch (sbErr: any) {
+      console.warn("[updateMarketPhase Supabase Sync Warning]:", sbErr.message);
+    }
+  }
+
   return updated;
 }
 

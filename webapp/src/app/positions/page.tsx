@@ -69,6 +69,57 @@ export default function PositionsPage() {
         }
       }
 
+      // Cross-reference with live market catalog to evaluate settled resolutions
+      try {
+        const mRes = await fetch("/api/markets");
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          const marketList: any[] = Array.isArray(mData?.markets)
+            ? mData.markets
+            : Array.isArray(mData)
+            ? mData
+            : [];
+
+          for (const pos of merged) {
+            const matched = marketList.find(
+              (m) => m.id === pos.marketId || m.title === pos.marketTitle
+            );
+            if (
+              matched &&
+              (matched.phase === "resolved" ||
+                matched.resolvedOutcome ||
+                matched.resolved_outcome)
+            ) {
+              const winOutcome = (
+                matched.resolvedOutcome ||
+                matched.resolved_outcome ||
+                ""
+              ).toLowerCase();
+              const userOutcome = (pos.outcome || "").toLowerCase();
+
+              if (winOutcome && userOutcome === winOutcome) {
+                pos.status = "won";
+                pos.claimableUsdc = pos.shares; // 1 winning share pays out $1.00 USDC
+                pos.currentValueUsdc = pos.shares;
+                pos.pnlUsdc = pos.shares - pos.costUsdc;
+                pos.pnlPercent =
+                  pos.costUsdc > 0
+                    ? ((pos.shares - pos.costUsdc) / pos.costUsdc) * 100
+                    : 0;
+              } else if (winOutcome && userOutcome !== winOutcome) {
+                pos.status = "lost";
+                pos.claimableUsdc = 0;
+                pos.currentValueUsdc = 0;
+                pos.pnlUsdc = -pos.costUsdc;
+                pos.pnlPercent = -100;
+              }
+            }
+          }
+        }
+      } catch (crossErr) {
+        console.warn("[Positions Page] Resolution cross-reference error:", crossErr);
+      }
+
       setPositions(merged);
     } catch (err) {
       console.warn("Could not fetch wallet positions:", err);
@@ -263,12 +314,14 @@ export default function PositionsPage() {
                               onClick={() => handleClaim(pos.marketId)}
                               className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-[11px] rounded transition shadow-md shadow-emerald-500/20 cursor-pointer"
                             >
-                              Claim
+                              💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}
                             </button>
-                          ) : pos.isClaimed ? (
-                            <span className="text-slate-500 text-[11px]">Claimed ✓</span>
+                          ) : pos.status === "won" && pos.isClaimed ? (
+                            <span className="text-emerald-400 text-[11px] font-bold">🟢 Won • Claimed ✓</span>
+                          ) : pos.status === "lost" ? (
+                            <span className="text-rose-400/80 text-[11px] font-medium">🔴 Lost</span>
                           ) : (
-                            <span className="text-slate-500 text-[11px]">Active</span>
+                            <span className="text-sky-400 text-[11px]">🔵 Active</span>
                           )}
                         </td>
                       </tr>

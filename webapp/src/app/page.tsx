@@ -21,6 +21,7 @@ export interface MarketItem {
   volumeRaw: number;
   creator: string;
   phase: "primary" | "secondary" | "resolved";
+  resolvedOutcome?: "yes" | "no";
   description?: string;
 }
 
@@ -46,6 +47,7 @@ function formatMarketEntry(m: any): MarketItem {
     volumeRaw: volRaw,
     creator: m.creator || "PantaChat",
     phase: (m.phase as any) || "primary",
+    resolvedOutcome: m.resolvedOutcome || m.resolved_outcome,
     description: m.description,
   };
 }
@@ -57,6 +59,7 @@ export default function MarketExplorer() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [statusFilter, setStatusFilter] = useState<"active" | "resolved">("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [chartMode, setChartMode] = useState<"price" | "volume">("price");
   const [timeframe, setTimeframe] = useState("7D");
@@ -88,19 +91,24 @@ export default function MarketExplorer() {
     fetchMarkets();
   }, []);
 
-  // Filtered Markets
+  const activeMarketsCount = markets.filter((m) => m.phase !== "resolved").length;
+  const resolvedMarketsCount = markets.filter((m) => m.phase === "resolved").length;
+
+  // Filtered Markets with Active vs Resolved History Partitioning
   const filteredMarkets = useMemo(() => {
     return markets.filter((m) => {
+      const matchesPhase =
+        statusFilter === "active" ? m.phase !== "resolved" : m.phase === "resolved";
       const matchesCategory =
         selectedCategory === "All" || m.category.toLowerCase() === selectedCategory.toLowerCase();
       const matchesSearch =
         m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         m.creator.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
+      return matchesPhase && matchesCategory && matchesSearch;
     });
-  }, [markets, selectedCategory, searchQuery]);
+  }, [markets, statusFilter, selectedCategory, searchQuery]);
 
-  const heroMarket = filteredMarkets[0] || markets[0] || null;
+  const heroMarket = statusFilter === "active" ? (filteredMarkets[0] || null) : null;
 
   // Open Quick Buy Modal Helper
   const openBuyModal = (market: MarketItem, outcome: "yes" | "no" = "yes") => {
@@ -344,13 +352,41 @@ export default function MarketExplorer() {
             </div>
           )}
 
-          {/* Search & Explore Controls */}
+          {/* Search & Explore Controls + Active / History Switcher */}
           {markets.length > 0 && (
             <>
-              <div className="flex flex-col md:flex-row items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-                  <span className="text-white font-semibold">{filteredMarkets.length}</span>
-                  <span>Active Prediction Markets</span>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pt-2">
+                {/* Active vs Resolved (History) Filter Tabs */}
+                <div className="flex items-center gap-1.5 p-1 rounded-lg bg-[#121721] border border-[#1e2638]">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("active")}
+                    className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      statusFilter === "active"
+                        ? "bg-[#181f2c] text-white border border-[#2a344d] shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <span>⚡ Active Markets</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                      {activeMarketsCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("resolved")}
+                    className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                      statusFilter === "resolved"
+                        ? "bg-[#181f2c] text-white border border-[#2a344d] shadow-sm"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    <span>📜 Past / History</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold">
+                      {resolvedMarketsCount}
+                    </span>
+                  </button>
                 </div>
 
                 {/* Live Title Search */}
@@ -360,48 +396,130 @@ export default function MarketExplorer() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search markets by title..."
+                    placeholder={statusFilter === "active" ? "Search active markets..." : "Search past markets..."}
                     className="w-full bg-[#121721] border border-[#1e2638] rounded-md pl-7 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#38bdf8]/50"
                   />
                 </div>
               </div>
 
-              {/* Explore Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredMarkets.map((market) => (
-                  <div
-                    key={market.id}
-                    onClick={() => openBuyModal(market, "yes")}
-                    className="panta-card p-4 flex flex-col justify-between gap-3 hover:border-[#2a344d] transition cursor-pointer group"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                      <span className="bg-[#181f2c] px-2 py-0.5 rounded text-slate-300">{market.category}</span>
-                      <span>{market.timestamp}</span>
-                    </div>
-
-                    <h3 className="font-heading font-semibold text-sm text-white leading-snug line-clamp-2 group-hover:text-[#38bdf8] transition">
-                      {market.title}
-                    </h3>
-
-                    {/* Outcome Percentages */}
-                    <div className="grid grid-cols-2 gap-2 text-xs font-mono font-medium">
-                      <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#38bdf8]">
-                        <span>Yes</span>
-                        <span suppressHydrationWarning>{market.yesPercent.toFixed(1)}%</span>
-                      </div>
-                      <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#c084fc]">
-                        <span>No</span>
-                        <span suppressHydrationWarning>{market.noPercent.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-1 border-t border-[#1e2638]">
-                      <span suppressHydrationWarning>{market.volume}</span>
-                      <span className="text-slate-400">By {market.creator}</span>
-                    </div>
+              {/* Explore Grid or Empty History State */}
+              {filteredMarkets.length === 0 ? (
+                <div className="panta-card p-10 flex flex-col items-center justify-center text-center gap-3 border border-[#1e2638] bg-[#121721] rounded-lg">
+                  <div className="w-10 h-10 rounded-full bg-[#181f2c] border border-[#1e2638] flex items-center justify-center text-lg">
+                    {statusFilter === "active" ? "🔍" : "📜"}
                   </div>
-                ))}
-              </div>
+                  <div className="flex flex-col gap-1 max-w-sm">
+                    <h3 className="font-heading font-semibold text-sm text-white">
+                      {statusFilter === "active"
+                        ? "No matching active prediction markets"
+                        : "No resolved markets in history yet"}
+                    </h3>
+                    <p className="text-xs text-slate-400 font-mono">
+                      {statusFilter === "active"
+                        ? "Try clearing your search query or choosing another topic."
+                        : "When active markets reach their resolution date, their settled outcomes and payout records are archived here."}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredMarkets.map((market) => {
+                    const isResolved = market.phase === "resolved";
+                    const winOutcome = market.resolvedOutcome?.toLowerCase();
+
+                    return (
+                      <div
+                        key={market.id}
+                        onClick={() => {
+                          if (isResolved) {
+                            window.location.href = "/positions";
+                          } else {
+                            openBuyModal(market, "yes");
+                          }
+                        }}
+                        className={`panta-card p-4 flex flex-col justify-between gap-3 transition cursor-pointer group ${
+                          isResolved
+                            ? "border-slate-800 bg-[#0e121a] hover:border-slate-700"
+                            : "hover:border-[#2a344d]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                          <span className="bg-[#181f2c] px-2 py-0.5 rounded text-slate-300">
+                            {market.category}
+                          </span>
+                          {isResolved ? (
+                            <span
+                              className={`px-2 py-0.5 rounded font-bold border ${
+                                winOutcome === "yes"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                  : winOutcome === "no"
+                                  ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
+                                  : "bg-slate-800 text-slate-300 border-slate-700"
+                              }`}
+                            >
+                              🏆 {winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}
+                            </span>
+                          ) : (
+                            <span>{market.timestamp}</span>
+                          )}
+                        </div>
+
+                        <h3 className="font-heading font-semibold text-sm text-white leading-snug line-clamp-2 group-hover:text-[#38bdf8] transition">
+                          {market.title}
+                        </h3>
+
+                        {/* Outcome Display: Live Odds vs Settled Resolution */}
+                        {isResolved ? (
+                          <div className="grid grid-cols-2 gap-2 text-xs font-mono font-medium">
+                            <div
+                              className={`border rounded px-2.5 py-1.5 flex justify-between items-center ${
+                                winOutcome === "yes"
+                                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300 font-bold"
+                                  : "bg-[#0b0e14] border-[#1e2638] text-slate-500 line-through opacity-60"
+                              }`}
+                            >
+                              <span>YES</span>
+                              <span>{winOutcome === "yes" ? "100% 🏆" : "0%"}</span>
+                            </div>
+                            <div
+                              className={`border rounded px-2.5 py-1.5 flex justify-between items-center ${
+                                winOutcome === "no"
+                                  ? "bg-purple-500/10 border-purple-500/40 text-purple-300 font-bold"
+                                  : "bg-[#0b0e14] border-[#1e2638] text-slate-500 line-through opacity-60"
+                              }`}
+                            >
+                              <span>NO</span>
+                              <span>{winOutcome === "no" ? "100% 🏆" : "0%"}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2 text-xs font-mono font-medium">
+                            <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#38bdf8]">
+                              <span>Yes</span>
+                              <span suppressHydrationWarning>{market.yesPercent.toFixed(1)}%</span>
+                            </div>
+                            <div className="bg-[#0f1520] border border-[#1e2638] rounded px-2.5 py-1.5 flex justify-between items-center text-[#c084fc]">
+                              <span>No</span>
+                              <span suppressHydrationWarning>{market.noPercent.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono pt-1 border-t border-[#1e2638]">
+                          <span suppressHydrationWarning>{market.volume}</span>
+                          {isResolved ? (
+                            <span className="text-emerald-400 font-semibold group-hover:underline">
+                              Claim Payouts →
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">By {market.creator}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </main>
