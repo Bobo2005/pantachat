@@ -129,6 +129,47 @@ function SigningFlow() {
   const [txSignature, setTxSignature] = useState<string>("");
   const [isStaleQuote, setIsStaleQuote] = useState<boolean>(false);
 
+  // Devnet SOL balance & quick faucet claim state
+  const [userSolBalance, setUserSolBalance] = useState<number | null>(null);
+  const [claimingSol, setClaimingSol] = useState<boolean>(false);
+  const [faucetNotice, setFaucetNotice] = useState<string | null>(null);
+
+  const checkBalance = useCallback(async () => {
+    if (publicKey) {
+      try {
+        const bal = await connection.getBalance(publicKey);
+        setUserSolBalance(bal / 1_000_000_000);
+      } catch {}
+    }
+  }, [publicKey, connection]);
+
+  useEffect(() => {
+    checkBalance();
+  }, [checkBalance]);
+
+  const handleQuickFaucet = async () => {
+    if (!publicKey) return;
+    setClaimingSol(true);
+    setFaucetNotice(null);
+    try {
+      const res = await fetch("/api/faucet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: publicKey.toBase58() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Faucet claim failed");
+      }
+      setFaucetNotice("✅ 0.25 Devnet SOL claimed!");
+      setTimeout(checkBalance, 1200);
+    } catch (err: any) {
+      setFaucetNotice(`⚠️ ${err.message || "Failed to claim"}`);
+    } finally {
+      setClaimingSol(false);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // 1. Fetch Session & Real-Time Quote (Multi-tier: Backend -> Local Route -> Client Fallback)
   // ---------------------------------------------------------------------------
@@ -737,6 +778,40 @@ function SigningFlow() {
                 Refresh
               </button>
             </div>
+
+            {/* Low Devnet SOL Gas Alert & 1-Click Faucet */}
+            {connected && userSolBalance !== null && userSolBalance < 0.05 && (
+              <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs flex items-center justify-between gap-2">
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-semibold text-sky-300">
+                    Low Devnet Gas ({userSolBalance.toFixed(3)} SOL)
+                  </span>
+                  <span className="text-[10px] text-slate-400">Need funds for tx fee? Claim test SOL instantly</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleQuickFaucet}
+                  disabled={claimingSol}
+                  className="px-2.5 py-1.5 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 font-mono text-[11px] font-medium transition cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  {claimingSol ? (
+                    <>
+                      <div className="w-2.5 h-2.5 border-2 border-sky-300 border-t-transparent rounded-full animate-spin" />
+                      <span>Claiming...</span>
+                    </>
+                  ) : (
+                    <span>💧 Claim 0.25 SOL</span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Faucet Notice Feedback */}
+            {faucetNotice && (
+              <div className="text-[11px] font-mono px-2.5 py-1.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-200">
+                {faucetNotice}
+              </div>
+            )}
 
             {/* Action Button */}
             {!connected ? (

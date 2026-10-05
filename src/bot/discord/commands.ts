@@ -390,13 +390,13 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
   await interaction.deferReply();
 
   try {
-    const airdropSig = await solanaConnection.requestAirdrop(pubkey, 2 * LAMPORTS_PER_SOL);
+    const airdropSig = await solanaConnection.requestAirdrop(pubkey, Math.round(0.25 * LAMPORTS_PER_SOL));
     await waitForConfirmation(airdropSig, 25000);
 
     await interaction.editReply({
       content:
         `✅ **Devnet Airdrop Successful!**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• **Amount:** 2.0 SOL\n` +
+        `• **Amount:** 0.25 SOL\n` +
         `• **Recipient:** \`${pubkey.toBase58()}\`\n` +
         `• **Tx Signature:** \`${airdropSig}\`\n\n` +
         `[View on Solana Explorer](https://explorer.solana.com/tx/${airdropSig}?cluster=devnet)`,
@@ -405,7 +405,9 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
     await interaction.editReply({
       content:
         `⚠️ **Faucet Request Failed:** ${err.message || "RPC rate limit or error"}\n\n` +
-        `You can request test SOL directly from [faucet.solana.com](https://faucet.solana.com).`,
+        `👉 **Instant No-GitHub Options:**\n` +
+        `1. Claim in our WebApp: [PantaChat Faucet](${config.WEBAPP_URL}/?faucet=true)\n` +
+        `2. Alternative Web Faucet: [solfaucet.com](https://solfaucet.com)`,
     });
   }
 }

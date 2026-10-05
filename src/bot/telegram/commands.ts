@@ -331,20 +331,20 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
     try {
       const pubkey = new PublicKey(args);
-      const airdropMsg = await ctx.reply("⏳ *Requesting 2 Devnet SOL from Solana Faucet...*", {
+      const airdropMsg = await ctx.reply("⏳ *Requesting 0.25 Devnet SOL from Solana Faucet...*", {
         parse_mode: "Markdown",
       });
 
       const airdropSig = await solanaConnection.requestAirdrop(
         pubkey,
-        2 * LAMPORTS_PER_SOL
+        Math.round(0.25 * LAMPORTS_PER_SOL)
       );
 
       await waitForConfirmation(airdropSig, 20000);
 
       return ctx.reply(
         `✅ *Devnet Airdrop Successful!*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `• *Amount:* 2.0 SOL\n` +
+          `• *Amount:* 0.25 SOL\n` +
           `• *Recipient:* \`${pubkey.toBase58()}\`\n` +
           `• *Tx Signature:* \`${airdropSig}\`\n\n` +
           `[View on Solana Explorer](https://explorer.solana.com/tx/${airdropSig}?cluster=devnet)`,
@@ -353,7 +353,9 @@ export function registerTelegramCommands(bot: Telegraf): void {
     } catch (err: any) {
       return ctx.reply(
         `⚠️ *Faucet Request Failed:*\n${err.message || "Invalid address or RPC faucet rate limit"}\n\n` +
-          `You can also request airdrops directly at [faucet.solana.com](https://faucet.solana.com).`,
+          `👉 *Instant No-GitHub Options:*\n` +
+          `1. Claim in our WebApp: [PantaChat Faucet](${config.WEBAPP_URL}/?faucet=true)\n` +
+          `2. Alternative Web Faucet: [solfaucet.com](https://solfaucet.com)`,
         { parse_mode: "Markdown" }
       );
     }

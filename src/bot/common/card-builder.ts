@@ -204,7 +204,7 @@ export function getPresetBuyButtons(
     ],
     [
       { text: "📊 Market Details", callback_data: `details_${marketId}` },
-      { text: "💧 Get Demo Funds", url: "https://faucet.solana.com" },
+      { text: "💧 Get Demo Funds", url: `${config.WEBAPP_URL}/?faucet=true` },
     ],
   ];
 }
