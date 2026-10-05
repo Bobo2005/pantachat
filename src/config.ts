@@ -77,6 +77,9 @@ export const envSchema = z.object({
   DISCORD_CLIENT_ID: z
     .string()
     .min(1, "DISCORD_CLIENT_ID is required"),
+  DISCORD_GUILD_ID: z
+    .string()
+    .optional(),
 
   // AI Key & Model
   ANTHROPIC_API_KEY: z

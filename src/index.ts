@@ -5,7 +5,7 @@ import { bot } from "./bot/telegram/client.js";
 import { registerTelegramCommands } from "./bot/telegram/commands.js";
 import { registerTelegramCallbacks } from "./bot/telegram/callbacks.js";
 import { discordClient } from "./bot/discord/client.js";
-import { registerDiscordCommands } from "./bot/discord/commands.js";
+import { registerDiscordCommands, registerDiscordApplicationCommands } from "./bot/discord/commands.js";
 import { startResolutionPoller, registerWinnerNotificationHandler } from "./services/resolution-poller.js";
 import { startGraduationPoller } from "./services/graduation-poller.js";
 
@@ -80,8 +80,13 @@ async function bootstrap() {
   if (config.DISCORD_BOT_TOKEN && config.DISCORD_BOT_TOKEN !== "dummy_discord_token") {
     discordClient
       .login(config.DISCORD_BOT_TOKEN)
-      .then(() => {
+      .then(async () => {
         console.log("🤖 [Discord] Bot successfully connected to Gateway!");
+        try {
+          await registerDiscordApplicationCommands(config.DISCORD_GUILD_ID);
+        } catch (regErr: any) {
+          console.warn("⚠️ [Discord] Slash commands registration notice:", regErr?.message || regErr);
+        }
       })
       .catch((err) => {
         console.warn(`⚠️ [Discord] Login error (check token in .env):`, err.message);

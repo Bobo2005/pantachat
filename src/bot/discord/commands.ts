@@ -296,20 +296,27 @@ async function handleMarketCommand(interaction: ChatInputCommandInteraction): Pr
     return;
   }
 
-  // If query is an existing market ID
-  if (query.startsWith("mkt_") || query.length >= 20) {
+  const cleanQuery = query.trim();
+  // Only treat as market ID if it has NO spaces and matches an ID format
+  const isExplicitMarketId =
+    !cleanQuery.includes(" ") &&
+    (cleanQuery.startsWith("mkt_") || /^[a-zA-Z0-9_\-]{20,50}$/.test(cleanQuery));
+
+  if (isExplicitMarketId) {
     await interaction.deferReply();
     try {
-      const market = await getMarketById(query);
-      const { embed, components } = buildDiscordMarketCard(market);
-
-      await interaction.editReply({
-        embeds: [embed],
-        components,
-      });
-      return;
+      const market = await getMarketById(cleanQuery);
+      // Ensure market is valid and not a dummy fixture
+      if (market && market.id && !market.title?.includes("Fixture market")) {
+        const { embed, components } = buildDiscordMarketCard(market);
+        await interaction.editReply({
+          embeds: [embed],
+          components,
+        });
+        return;
+      }
     } catch {
-      // If not an existing market, fall through to AI drafter
+      // If not found, fall through to AI drafter
     }
   }
 
