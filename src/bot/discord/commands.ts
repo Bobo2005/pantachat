@@ -179,11 +179,16 @@ async function processBanterDraft(
       `Click below to review and sign the transaction in Phantom:`,
     ].join("\n");
 
+    const safeSignUrl =
+      session.signUrl && session.signUrl.length <= 512
+        ? session.signUrl
+        : `${config.WEBAPP_URL}/sign?session=${session.sessionId}`;
+
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setLabel("✅ Confirm & Launch (50 USDC)")
         .setStyle(ButtonStyle.Link)
-        .setURL(session.signUrl),
+        .setURL(safeSignUrl),
       new ButtonBuilder()
         .setCustomId(`dismiss_draft_${session.sessionId}`)
         .setLabel("❌ Dismiss")

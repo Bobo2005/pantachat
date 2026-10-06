@@ -41,11 +41,16 @@ async function handleBuyPresetButton(interaction: ButtonInteraction, match: RegE
       amountUsdc: amount,
     });
 
+    const safeSignUrl =
+      session.signUrl && session.signUrl.length <= 512
+        ? session.signUrl
+        : `${config.WEBAPP_URL}/sign?session=${session.sessionId}`;
+
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setLabel(`⚡ Sign $${amount} ${outcome.toUpperCase()} (Phantom)`)
         .setStyle(ButtonStyle.Link)
-        .setURL(session.signUrl)
+        .setURL(safeSignUrl)
     );
 
     // Ephemeral response protects personal signing links from public chat

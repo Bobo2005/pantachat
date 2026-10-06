@@ -235,9 +235,17 @@ export async function initiateMarketCreationSession(
     chatId: params.chatId,
     platform: params.platform,
     creator: params.platformUserId,
-    desc: params.description || "",
   });
-  const signUrl = `${config.WEBAPP_URL}/sign?${queryParams.toString()}`;
+  let signUrl = `${config.WEBAPP_URL}/sign?${queryParams.toString()}`;
+
+  // Discord button URLs have a hard limit of 512 characters (BASE_TYPE_MAX_LENGTH)
+  if (signUrl.length > 512) {
+    queryParams.set("title", params.title.slice(0, 50));
+    signUrl = `${config.WEBAPP_URL}/sign?${queryParams.toString()}`;
+    if (signUrl.length > 512) {
+      signUrl = `${config.WEBAPP_URL}/sign?session=${sessionId}`;
+    }
+  }
 
   return {
     sessionId,
