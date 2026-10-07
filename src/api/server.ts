@@ -1,8 +1,8 @@
 import express, { type Request, type Response, type Express } from "express";
 import cors from "cors";
 import { config } from "../config.js";
-import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets, getMarketsByCreator, findDuplicateMarket } from "../db/queries.js";
-import { getMarketById, getMarkets } from "./panta/markets.js";
+import { getSessionById, updateSessionStatus, recordTrade, saveMarket, getActiveMarkets, getMarketsByCreator, findDuplicateMarket, getTrendingMarkets as getDbTrendingMarkets } from "../db/queries.js";
+import { getMarketById, getMarkets, getTrendingMarkets } from "./panta/markets.js";
 import { getPrimaryOrderQuote, getPrimaryOrderBuild } from "./panta/trading.js";
 import { getCreateBuild, registerMarket } from "./panta/create.js";
 import { getClaimBuild, getWalletPositions } from "./panta/positions.js";
@@ -13,6 +13,7 @@ import {
   broadcastMarketCreatedNotification,
   broadcastTradeNotification,
   broadcastFaucetNotification,
+  broadcastBragNotification,
 } from "../services/market-notifier.js";
 import { pantaGet } from "./panta/client.js";
 
@@ -440,16 +441,59 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
   }
 });
 
+const braggedSessions = new Set<string>();
+
+/**
+ * POST /api/sessions/:id/brag
+ * Privacy-preserving brag flex broadcaster into Telegram or Discord.
+ * Does NOT accept or broadcast the user's raw Solana public key.
+ */
+app.post("/api/sessions/:id/brag", async (req: Request, res: Response) => {
+  const sessionId = String(req.params.id);
+  const { platform, chatId, userHandle, marketTitle, outcome, amount, marketId } = req.body;
+
+  if (!chatId) {
+    return res.status(400).json({ error: "MISSING_CHAT_ID", message: "chatId is required to brag in chat." });
+  }
+
+  // Idempotency check to avoid spamming the channel on multiple rapid clicks
+  if (braggedSessions.has(sessionId)) {
+    return res.json({ success: true, message: "Already bragged in chat.", alreadyBragged: true });
+  }
+
+  try {
+    await broadcastBragNotification({
+      platform: platform || "telegram",
+      chatId,
+      userHandle: userHandle || "trader",
+      marketTitle: marketTitle || "Prediction Market",
+      marketId: marketId || null,
+      outcome: outcome || "yes",
+      amount: Number(amount || 20),
+    });
+
+    braggedSessions.add(sessionId);
+
+    return res.json({ success: true, message: "Flex posted to chat!" });
+  } catch (err: any) {
+    console.error(`[API /sessions/:id/brag Error]:`, err);
+    return res.status(500).json({ error: "BRAG_FAILED", message: err.message });
+  }
+});
+
 /**
  * GET /api/markets/trending
- * Returns top cached markets from Panta or local SQLite catalog.
+ * Returns top volume active prediction markets on Panta or local catalog.
  */
-app.get("/api/markets/trending", async (_req: Request, res: Response) => {
+app.get("/api/markets/trending", async (req: Request, res: Response) => {
   try {
-    const markets = await getMarkets({ limit: 10 }).catch(async () => {
-      return getActiveMarkets();
-    });
-    return res.json({ markets });
+    const limit = Number(req.query.limit || 3);
+    const pantaTrending = await getTrendingMarkets(limit).catch(() => []);
+    if (pantaTrending.length > 0) {
+      return res.json({ markets: pantaTrending });
+    }
+    const dbTrending = await getDbTrendingMarkets(limit).catch(() => []);
+    return res.json({ markets: dbTrending });
   } catch (err: any) {
     return res.status(500).json({ error: "MARKET_FETCH_FAILED", message: err.message });
   }

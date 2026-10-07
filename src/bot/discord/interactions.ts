@@ -4,15 +4,17 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  EmbedBuilder,
   MessageFlags,
 } from "discord.js";
-import { getMarketById, getMarketStats } from "../../api/panta/markets.js";
+import { getMarketById, getMarketStats, getTrendingMarkets } from "../../api/panta/markets.js";
 import { createTradeSession } from "../../api/panta/trading.js";
-import { buildDiscordMarketCard } from "./embeds.js";
+import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
 import { getRecentTradesForUser } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
 import { formatUsdc } from "../../utils/formatters.js";
+import { generateProgressBar } from "../common/card-builder.js";
 import { config } from "../../config.js";
 
 // =============================================================================
@@ -88,6 +90,35 @@ async function handleRefreshButton(interaction: ButtonInteraction, marketId: str
     console.warn(`[Discord Button] Failed to refresh market ${marketId}:`, err.message);
     await interaction.reply({
       content: "⚠️ Odds are currently up to date.",
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+/**
+ * Handle In-Place Refresh for /trending List
+ */
+async function handleRefreshTrending(interaction: ButtonInteraction): Promise<void> {
+  try {
+    const topMarkets = await getTrendingMarkets(3);
+    if (!topMarkets || topMarkets.length === 0) {
+      await interaction.reply({
+        content: "⚠️ No trending markets found.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const { embed, components } = buildDiscordTrendingCard(topMarkets);
+
+    await interaction.update({
+      embeds: [embed],
+      components,
+    });
+  } catch (err: any) {
+    console.warn("[Discord Button] Failed to refresh trending markets:", err.message);
+    await interaction.reply({
+      content: "⚠️ Trending markets are up to date.",
       flags: MessageFlags.Ephemeral,
     });
   }
@@ -249,6 +280,12 @@ export function registerDiscordInteractions(client: Client): void {
       const buyMatch = customId.match(/^buy_(.+?)_(yes|no)_(\d+)$/i);
       if (buyMatch) {
         await handleBuyPresetButton(interaction, buyMatch);
+        return;
+      }
+
+      // Refresh Trending Button
+      if (customId === "refresh_trending") {
+        await handleRefreshTrending(interaction);
         return;
       }
 

@@ -233,3 +233,35 @@ export async function getMarketStats(marketId: string): Promise<MarketStats> {
     phase: market.phase || "primary",
   };
 }
+
+import { getTrendingMarkets as getDbTrendingMarkets } from "../../db/queries.js";
+
+/**
+ * Fetches the top trending prediction markets sorted by trading volume.
+ */
+export async function getTrendingMarkets(limit: number = 3): Promise<PantaMarket[]> {
+  try {
+    const all = await getMarkets({ limit: 20 });
+    const active = all.filter((m) => m.phase === "primary" || m.status === "active" || !m.phase);
+    const sorted = active.sort((a, b) => (b.volumeUsdc || 0) - (a.volumeUsdc || 0));
+    if (sorted.length >= limit) {
+      return sorted.slice(0, limit);
+    }
+    if (sorted.length > 0) {
+      return sorted;
+    }
+  } catch (err: any) {
+    console.warn("[getTrendingMarkets API Warning]:", err.message);
+  }
+
+  try {
+    const dbFallback = await getDbTrendingMarkets(limit);
+    if (dbFallback && dbFallback.length > 0) {
+      return dbFallback as any;
+    }
+  } catch (err: any) {
+    console.warn("[getTrendingMarkets DB Fallback Warning]:", err.message);
+  }
+
+  return [];
+}

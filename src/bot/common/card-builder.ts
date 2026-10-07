@@ -208,3 +208,51 @@ export function getPresetBuyButtons(
     ],
   ];
 }
+
+/**
+ * Builds cohesive Telegram trending markets card with sentiment progress bars
+ * and quick-bet buttons.
+ */
+export function buildTelegramTrendingCard(topMarkets: MarketData[]): {
+  text: string;
+  buttons: InlineButton[][];
+} {
+  const medals = ["1️⃣", "2️⃣", "3️⃣"];
+  const lines: string[] = [
+    `🔥 *TOP TRENDING MARKETS ON PANTA*`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+  ];
+
+  const buttons: InlineButton[][] = [];
+
+  topMarkets.forEach((m: any, idx: number) => {
+    const medal = medals[idx] || "•";
+    const yesPct = Math.round((Number(m.yesPrice) || 0.5) * 100);
+    const noPct = 100 - yesPct;
+    const progressBar = generateProgressBar(yesPct, 8);
+    const volumeDisplay = formatUsdc(Number(m.volumeUsdc) || 0);
+
+    lines.push(
+      `${medal} 🎯 *${m.title}*`,
+      `   📊 ${volumeDisplay} USDC • YES ${yesPct}% ${progressBar} ${noPct}% NO\n`
+    );
+
+    buttons.push([
+      { text: `🟢 Buy YES $5 (#${idx + 1})`, callback_data: `buy_${m.id}_yes_5` },
+      { text: `🔴 Buy NO $5 (#${idx + 1})`, callback_data: `buy_${m.id}_no_5` },
+    ]);
+  });
+
+  lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+  buttons.push([
+    { text: "🔄 Refresh Trending", callback_data: "refresh_trending" },
+    { text: "🌐 Open Full Hub", url: config.WEBAPP_URL },
+  ]);
+
+  return {
+    text: lines.join("\n"),
+    buttons,
+  };
+}
+

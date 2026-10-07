@@ -19,13 +19,14 @@ import { config } from "../../config.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
 import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
 import { createTradeSession } from "../../api/panta/trading.js";
-import { getMarketById } from "../../api/panta/markets.js";
-import { buildDiscordMarketCard } from "./embeds.js";
+import { getMarketById, getTrendingMarkets } from "../../api/panta/markets.js";
+import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
 import { registerDiscordInteractions } from "./interactions.js";
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
 import { formatUsdc } from "../../utils/formatters.js";
+import { generateProgressBar } from "../common/card-builder.js";
 
 // =============================================================================
 // Application Command Definitions (Slash Commands + Context Menu)
@@ -74,6 +75,16 @@ export const commandDefinitions = [
   new SlashCommandBuilder()
     .setName("leaderboard")
     .setDescription("View top community predictors by trading volume and trades"),
+
+  // 4b. Slash Command: /trending
+  new SlashCommandBuilder()
+    .setName("trending")
+    .setDescription("View top 3 trending prediction markets on Panta with live odds"),
+
+  // 4c. Slash Command: /hot (alias)
+  new SlashCommandBuilder()
+    .setName("hot")
+    .setDescription("View top 3 trending prediction markets on Panta with live odds"),
 
   // 5. Slash Command: /faucet [wallet]
   new SlashCommandBuilder()
@@ -263,11 +274,15 @@ async function handleBetCommand(interaction: ChatInputCommandInteraction): Promi
       amountUsdc: amount,
     });
 
+    const rawUrl = `${session.signUrl}&custom=true`;
+    const safeSignUrl =
+      rawUrl.length <= 512 ? rawUrl : `${config.WEBAPP_URL}/sign?session=${session.sessionId}&custom=true`;
+
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setLabel(`⚡ Sign ${amount} ${outcome.toUpperCase()} (Phantom)`)
         .setStyle(ButtonStyle.Link)
-        .setURL(`${session.signUrl}&custom=true`)
+        .setURL(safeSignUrl)
     );
 
     await interaction.reply({
@@ -565,6 +580,35 @@ async function handleFaucetCommand(interaction: ChatInputCommandInteraction): Pr
   }
 }
 
+/**
+ * Handle /trending & /hot (Top 3 highest volume prediction markets)
+ */
+async function handleTrendingCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+  try {
+    const topMarkets = await getTrendingMarkets(3);
+
+    if (!topMarkets || topMarkets.length === 0) {
+      await interaction.editReply({
+        content: "🔥 **Trending Prediction Markets**\nNo active markets found yet! Use `/market <question>` to launch the first market!",
+      });
+      return;
+    }
+
+    const { embed, components } = buildDiscordTrendingCard(topMarkets);
+
+    await interaction.editReply({
+      embeds: [embed],
+      components,
+    });
+  } catch (err: any) {
+    console.error("[Discord /trending Error]:", err);
+    await interaction.editReply({
+      content: `⚠️ Failed to fetch trending markets: ${err.message || "Unknown error"}`,
+    });
+  }
+}
+
 // =============================================================================
 // Register Discord Interaction Listeners
 // =============================================================================
@@ -600,6 +644,10 @@ export function registerDiscordCommands(client: Client): void {
             break;
           case "leaderboard":
             await handleLeaderboardCommand(interaction);
+            break;
+          case "trending":
+          case "hot":
+            await handleTrendingCommand(interaction);
             break;
           case "faucet":
             await handleFaucetCommand(interaction);

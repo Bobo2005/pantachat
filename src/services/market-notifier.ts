@@ -242,6 +242,129 @@ export async function broadcastTradeNotification(
 }
 
 // =============================================================================
+// Privacy-Preserving "Brag in Chat" Dispatcher
+// =============================================================================
+
+export interface BragNotificationParams {
+  platform: "telegram" | "discord" | string;
+  chatId: string;
+  userHandle: string;
+  marketTitle: string;
+  marketId?: string | null;
+  outcome: "yes" | "no" | string;
+  amount: number;
+}
+
+/**
+ * Dispatches a privacy-preserving brag/flex card into Telegram or Discord.
+ * NEVER outputs raw Solana wallet addresses or direct transaction signatures.
+ * Includes instant counter-bet buttons so chat members can immediately take the other side.
+ */
+export async function broadcastBragNotification(params: BragNotificationParams): Promise<void> {
+  const { platform, chatId, userHandle, marketTitle, marketId, outcome, amount } = params;
+  if (!chatId) return;
+
+  const outcomeUpper = String(outcome || "yes").toUpperCase();
+  const isYes = outcomeUpper === "YES";
+  const counterOutcome = isYes ? "no" : "yes";
+  const counterUpper = isYes ? "NO" : "YES";
+  const counterEmoji = isYes ? "🔴" : "🟢";
+
+  // 1. Dispatch to Telegram
+  if (platform === "telegram") {
+    try {
+      const userDisplay = userHandle.startsWith("@") ? userHandle : `@${userHandle}`;
+      const bragText = [
+        `🔥 *BET PLACED IN THE CHAT!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `*${userDisplay}* just put *$${Number(amount || 20).toFixed(2)} USDC* on *${outcomeUpper}* ${isYes ? "🟢" : "🔴"}!`,
+        ``,
+        `🎯 *"${marketTitle}"*`,
+        ``,
+        `_Think they're wrong? Fade them right now:_`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join("\n");
+
+      const inline_keyboard = marketId
+        ? [
+            [
+              { text: `${counterEmoji} Fade: Bet ${counterUpper} $5`, callback_data: `buy_${marketId}_${counterOutcome}_5` },
+              { text: `${counterEmoji} Fade: Bet ${counterUpper} $20`, callback_data: `buy_${marketId}_${counterOutcome}_20` },
+            ],
+            [
+              { text: "📊 Market Details", callback_data: `details_${marketId}` },
+              { text: "🌐 Open PantaChat", url: config.WEBAPP_URL },
+            ],
+          ]
+        : [[{ text: "🌐 Trade on PantaChat", url: config.WEBAPP_URL }]];
+
+      await bot.telegram.sendMessage(chatId, bragText, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard },
+      });
+      console.log(`✅ [Market Notifier] Telegram brag flex posted to ${chatId} for ${userDisplay}`);
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Telegram brag flex warning:`, err.message);
+    }
+  }
+
+  // 2. Dispatch to Discord
+  else if (platform === "discord") {
+    try {
+      const channel = await discordClient.channels.fetch(chatId);
+      if (channel && channel.isTextBased()) {
+        const userMention = userHandle.startsWith("<@")
+          ? userHandle
+          : userHandle.startsWith("@")
+          ? userHandle
+          : `@${userHandle}`;
+
+        const embed = new EmbedBuilder()
+          .setTitle("🔥 Prediction Bet Placed in the Channel!")
+          .setColor(isYes ? 0x10b981 : 0xef4444)
+          .setDescription(
+            `**${userMention}** just locked in **$${Number(amount || 20).toFixed(2)} USDC** on **${outcomeUpper}** ${isYes ? "🟢" : "🔴"}!\n\n` +
+            `🎯 **"${marketTitle}"**\n\n` +
+            `*Think they're wrong? Take the opposite side right now:*`
+          )
+          .setFooter({ text: "PantaChat • Non-Custodial Social Betting" });
+
+        const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+        if (marketId) {
+          const fadeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`buy_${marketId}_${counterOutcome}_5`)
+              .setLabel(`Fade: Bet ${counterUpper} $5`)
+              .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`buy_${marketId}_${counterOutcome}_20`)
+              .setLabel(`Fade: Bet ${counterUpper} $20`)
+              .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success)
+          );
+          rows.push(fadeRow);
+        }
+
+        const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel("🌐 Open PantaChat")
+            .setStyle(ButtonStyle.Link)
+            .setURL(config.WEBAPP_URL)
+        );
+        rows.push(linkRow);
+
+        await (channel as any).send({
+          embeds: [embed],
+          components: rows,
+        });
+        console.log(`✅ [Market Notifier] Discord brag flex posted to ${chatId}`);
+      }
+    } catch (err: any) {
+      console.warn(`⚠️ [Market Notifier] Discord brag flex warning:`, err.message);
+    }
+  }
+}
+
+// =============================================================================
 // Faucet Request Notification Dispatcher
 // =============================================================================
 

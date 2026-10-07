@@ -1,9 +1,10 @@
 import { type Telegraf, type Context } from "telegraf";
-import { getMarketById, getMarketStats } from "../../api/panta/markets.js";
+import { getMarketById, getMarketStats, getTrendingMarkets } from "../../api/panta/markets.js";
 import { createTradeSession } from "../../api/panta/trading.js";
 import { getSessionById } from "../../db/queries.js";
-import { buildMarketCardText, getPresetBuyButtons } from "../common/card-builder.js";
+import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
+import { formatUsdc } from "../../utils/formatters.js";
 import { config } from "../../config.js";
 
 // =============================================================================
@@ -11,6 +12,30 @@ import { config } from "../../config.js";
 // =============================================================================
 
 export function registerTelegramCallbacks(bot: Telegraf): void {
+  // ---------------------------------------------------------------------------
+  // Refresh Trending In-Place
+  // ---------------------------------------------------------------------------
+  bot.action("refresh_trending", async (ctx) => {
+    try {
+      const topMarkets = await getTrendingMarkets(3);
+      if (!topMarkets || topMarkets.length === 0) {
+        return ctx.answerCbQuery("No trending markets found.").catch(() => {});
+      }
+
+      const card = buildTelegramTrendingCard(topMarkets);
+
+      await ctx.editMessageText(card.text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: card.buttons as any },
+      });
+
+      await ctx.answerCbQuery("⚡ Trending markets updated!").catch(() => {});
+    } catch (err: any) {
+      console.warn("[Telegram Callback] Failed refreshing trending:", err.message);
+      await ctx.answerCbQuery("⚠️ Trending markets are up to date.").catch(() => {});
+    }
+  });
+
   // ---------------------------------------------------------------------------
   // 1. Refresh Odds (In-Place Update with Zero Chat Spam)
   // Matches "refresh_odds:<marketId>" or "refresh_<marketId>"

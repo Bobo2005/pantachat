@@ -3,8 +3,8 @@ import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { draftMarketFromText } from "../../ai/drafter.js";
 import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
 import { createTradeSession } from "../../api/panta/trading.js";
-import { getMarketById } from "../../api/panta/markets.js";
-import { buildMarketCardText, getPresetBuyButtons } from "../common/card-builder.js";
+import { getMarketById, getTrendingMarkets } from "../../api/panta/markets.js";
+import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
@@ -81,6 +81,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       `• \`/bet <id> <yes|no> <amount>\` — Place a custom bet on any market`,
       `• \`/positions\` — View your active bets and claimable payouts`,
       `• \`/earnings\` — Check creator royalties & claim graduated fees`,
+      `• \`/trending\` — View top 3 live prediction markets by volume`,
       `• \`/leaderboard\` — Top predictors by volume & win rate`,
       `• \`/faucet [wallet]\` — Request Devnet SOL for risk-free testing`,
       ``,
@@ -415,6 +416,35 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
     return ctx.reply(text, { parse_mode: "Markdown" });
   });
+
+  // ---------------------------------------------------------------------------
+  // /trending & /hot (Top 3 highest volume markets)
+  // ---------------------------------------------------------------------------
+  const handleTrendingCommand = async (ctx: Context) => {
+    try {
+      const topMarkets = await getTrendingMarkets(3);
+
+      if (!topMarkets || topMarkets.length === 0) {
+        return ctx.reply(
+          `🔥 *TOP TRENDING MARKETS ON PANTA*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `No active markets found yet! Type \`/market <question>\` to draft the first market in this chat!`,
+          { parse_mode: "Markdown" }
+        );
+      }
+
+      const card = buildTelegramTrendingCard(topMarkets);
+
+      return ctx.reply(card.text, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: card.buttons as any },
+      });
+    } catch (err: any) {
+      console.error("[Telegram /trending error]:", err);
+      return ctx.reply(`⚠️ Failed to load trending markets: ${err.message || "Unknown error"}`);
+    }
+  };
+
+  bot.command(["trending", "hot"], handleTrendingCommand);
 
   // ---------------------------------------------------------------------------
   // /faucet [wallet]

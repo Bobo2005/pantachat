@@ -397,3 +397,16 @@ export async function addUserTradeAsync(trade: any): Promise<void> {
   } catch (err) {}
 }
 
+/**
+ * Returns top trending live markets sorted descending by volume.
+ */
+export async function getTrendingMarketsAsync(limit: number = 3): Promise<LiveMarket[]> {
+  const all = await getAllLiveMarketsAsync();
+  const active = all.filter((m) => m.phase === "primary" || !m.phase || m.phase === "secondary");
+  const sorted = active.sort((a, b) => (Number(b.volumeUsdc) || Number(b.volumeRaw) || 0) - (Number(a.volumeUsdc) || Number(a.volumeRaw) || 0));
+  if (sorted.length >= limit) {
+    return sorted.slice(0, limit);
+  }
+  return sorted.length > 0 ? sorted : all.slice(0, limit);
+}
+

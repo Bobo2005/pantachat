@@ -178,6 +178,87 @@ function SigningFlow() {
     }
   };
 
+  // Social Brag & X Sharing state
+  const [bragState, setBragState] = useState<"idle" | "sharing" | "shared" | "error">("idle");
+  const [bragMessage, setBragMessage] = useState<string>("");
+
+  const handleBragInChat = async () => {
+    if (!sessionId) return;
+    setBragState("sharing");
+    setBragMessage("");
+
+    const effectiveChatId = queryChatId || (session?.payload as any)?.chatId || session?.chatId;
+    const effectivePlatform = session?.platform || queryPlatform;
+    const effectiveUser = session?.platformUserId || queryCreator || "trader";
+    const effectiveTitle = session?.payload?.title || session?.market?.title || queryTitle || "Prediction Market";
+    const effectiveMarketId = (session?.payload as any)?.marketId || session?.market?.id || queryMarketId;
+    const effectiveOutcome = (session?.payload as any)?.outcome || queryOutcome;
+    const effectiveAmount = activeAmount || (session?.payload as any)?.amountUsdc || queryAmount;
+
+    const bragPayload = {
+      sessionId,
+      platform: effectivePlatform,
+      chatId: effectiveChatId,
+      userHandle: effectiveUser,
+      marketTitle: effectiveTitle,
+      marketId: effectiveMarketId,
+      outcome: effectiveOutcome,
+      amount: effectiveAmount,
+    };
+
+    try {
+      let sent = false;
+      // 1. Next.js serverless route
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/brag`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(bragPayload),
+        });
+        if (res.ok) sent = true;
+      } catch {}
+
+      // 2. Central backend API fallback if configured
+      if (!sent && BACKEND_URL) {
+        try {
+          const res2 = await fetch(`${BACKEND_URL}/api/sessions/${sessionId}/brag`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(bragPayload),
+          });
+          if (res2.ok) sent = true;
+        } catch {}
+      }
+
+      if (sent) {
+        setBragState("shared");
+        setBragMessage("");
+      } else {
+        setBragState("error");
+        setBragMessage("⚠️ Could not share to chat, but your on-chain trade is confirmed.");
+      }
+    } catch {
+      setBragState("error");
+      setBragMessage("⚠️ Could not share to chat, but your on-chain trade is confirmed.");
+    }
+  };
+
+  const handleShareOnX = () => {
+    const effectiveTitle = session?.payload?.title || session?.market?.title || queryTitle || "Prediction Market";
+    const oddsPct = session?.quote?.effectivePrice
+      ? Math.round(session.quote.effectivePrice * 100)
+      : session?.market?.yesPrice
+      ? Math.round(session.market.yesPrice * 100)
+      : 50;
+    const effectiveMarketId = (session?.payload as any)?.marketId || session?.market?.id || queryMarketId;
+    const appLink = effectiveMarketId
+      ? `https://pantachat.vercel.app/?market=${effectiveMarketId}`
+      : "https://pantachat.vercel.app";
+    const tweetText = `Just took a position on ${effectiveTitle} via @PantaHQ! Current odds: ${oddsPct}%. Bet against me: ${appLink}`;
+    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   // ---------------------------------------------------------------------------
   // 1. Fetch Session & Real-Time Quote (Multi-tier: Backend -> Local Route -> Client Fallback)
   // ---------------------------------------------------------------------------
@@ -1061,6 +1142,77 @@ function SigningFlow() {
                 View on Solana Explorer ↗
               </a>
             )}
+
+            {/* Privacy-Preserving Social Flex Section */}
+            {(() => {
+              const effectiveChatId = queryChatId || (session?.payload as any)?.chatId || session?.chatId;
+              const hasChat = Boolean(effectiveChatId);
+
+              return (
+                <div className="w-full mt-2 p-3.5 rounded-lg bg-[#0b0e14] border border-[#1e2638] flex flex-col gap-3">
+                  <div className="flex flex-col gap-1 text-left">
+                    <div className="text-[11px] font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>📢</span>
+                      <span>Share Your Prediction</span>
+                      <span className="text-[10px] text-emerald-400 font-normal lowercase bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        privacy preserved
+                      </span>
+                    </div>
+                    <p className="text-[11px] font-mono text-slate-400 leading-relaxed">
+                      Flex in your community group without exposing your personal Solana wallet address. Friends can counter-bet with 1 tap.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-0.5">
+                    {/* Button 1 (Primary): [ 📢 Brag in Chat ] (Shown whenever queryChatId or session chatId is present) */}
+                    {hasChat && (
+                      <button
+                        type="button"
+                        onClick={handleBragInChat}
+                        disabled={bragState === "sharing" || bragState === "shared"}
+                        className={`w-full py-2.5 px-3 rounded-md text-xs font-mono font-semibold transition flex items-center justify-center gap-2 ${
+                          bragState === "shared"
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/40 cursor-default"
+                            : bragState === "sharing"
+                            ? "bg-emerald-500/80 text-black cursor-not-allowed"
+                            : "bg-emerald-500 hover:bg-emerald-400 text-black shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-[0.99]"
+                        }`}
+                      >
+                        {bragState === "sharing" ? (
+                          <>
+                            <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                            <span>sharing...</span>
+                          </>
+                        ) : bragState === "shared" ? (
+                          <span>✅ Flex Shared to Chat!</span>
+                        ) : (
+                          <>
+                            <span>📢</span>
+                            <span>Brag in Chat</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Button 2 (Secondary): [ 🐦 Share on X ] */}
+                    <button
+                      type="button"
+                      onClick={handleShareOnX}
+                      className="w-full py-2 px-3 rounded-md bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] hover:border-slate-700 text-slate-200 text-xs font-mono font-medium transition cursor-pointer flex items-center justify-center gap-2 active:scale-[0.99]"
+                    >
+                      <span>🐦</span>
+                      <span>Share on X</span>
+                    </button>
+                  </div>
+
+                  {bragMessage && (
+                    <div className="text-[11px] font-mono text-center pt-1 text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded py-1 px-2">
+                      {bragMessage}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="w-full pt-3">
               {isTelegram ? (

@@ -182,3 +182,63 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
 
   return { embed, components };
 }
+
+/**
+ * Builds cohesive Discord trending embed with color #38bdf8,
+ * Rank #1 quick-bet buttons, refresh button, and link button.
+ */
+export function buildDiscordTrendingCard(topMarkets: MarketData[]): {
+  embed: EmbedBuilder;
+  components: ActionRowBuilder<ButtonBuilder>[];
+} {
+  const medals = ["1️⃣", "2️⃣", "3️⃣"];
+  const embed = new EmbedBuilder()
+    .setTitle("🔥 Top Trending Markets on Panta")
+    .setColor(0x38bdf8)
+    .setDescription("Here is where the volume and debate are right now:\n")
+    .setFooter({ text: "PantaChat • Non-Custodial Social Betting" })
+    .setTimestamp();
+
+  topMarkets.forEach((m: any, idx: number) => {
+    const medal = medals[idx] || "•";
+    const yesPct = Math.round((Number(m.yesPrice) || 0.5) * 100);
+    const noPct = 100 - yesPct;
+    const progressBar = generateProgressBar(yesPct, 8);
+    const volumeDisplay = formatUsdc(Number(m.volumeUsdc) || 0);
+
+    embed.addFields({
+      name: `${medal} 🎯 ${m.title}`,
+      value: `📊 ${volumeDisplay} USDC • **YES** ${yesPct}% ${progressBar} ${noPct}% **NO**`,
+      inline: false,
+    });
+  });
+
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  const topMarket = topMarkets[0];
+  if (topMarket) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`buy_${topMarket.id}_yes_5`)
+        .setLabel("🟢 Buy YES $5 (#1)")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`buy_${topMarket.id}_no_5`)
+        .setLabel("🔴 Buy NO $5 (#1)")
+        .setStyle(ButtonStyle.Danger)
+    );
+  }
+
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId("refresh_trending")
+      .setLabel("🔄 Refresh")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setLabel("🌐 Open Full Hub")
+      .setStyle(ButtonStyle.Link)
+      .setURL(config.WEBAPP_URL)
+  );
+
+  return { embed, components: [row] };
+}
+

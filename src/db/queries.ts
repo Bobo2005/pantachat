@@ -355,3 +355,73 @@ export async function updateSessionStatus(
     .returning();
   return updated;
 }
+
+/**
+ * Retrieves the top trending prediction markets sorted by trading volume.
+ * Fallbacks to Supabase if fewer than requested count exist in local SQLite.
+ */
+export async function getTrendingMarkets(limit: number = 3): Promise<Market[]> {
+  try {
+    const live = await db
+      .select()
+      .from(markets)
+      .where(or(eq(markets.phase, "primary"), eq(markets.phase, "secondary")))
+      .orderBy(desc(markets.volumeUsdc))
+      .limit(limit);
+
+    if (live.length >= limit) {
+      return live;
+    }
+
+    // Check Supabase if local DB has fewer than desired limit
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (supabaseUrl && supabaseKey) {
+      const res = await fetch(`${supabaseUrl}/rest/v1/markets?select=*&order=volume_usdc.desc&limit=${limit}`, {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped: Market[] = data.map((m: any) => ({
+            id: m.id,
+            title: m.title,
+            description: m.description,
+            category: m.category || "Crypto",
+            creatorWallet: m.creator_wallet,
+            creatorPlatformId: m.creator_platform_id,
+            platform: m.platform,
+            chatId: m.chat_id,
+            messageId: m.message_id,
+            phase: m.phase || "primary",
+            cutoffAt: m.cutoff_at,
+            resolvedOutcome: m.resolved_outcome,
+            yesPrice: Number(m.yes_price ?? 0.5),
+            noPrice: Number(m.no_price ?? 0.5),
+            volumeUsdc: Number(m.volume_usdc ?? 50),
+            createdAt: m.created_at ? Math.floor(new Date(m.created_at).getTime() / 1000) : Math.floor(Date.now() / 1000),
+          }));
+
+          // Merge without duplicates
+          const seen = new Set(live.map((m) => m.id));
+          const combined = [...live];
+          for (const m of mapped) {
+            if (!seen.has(m.id)) {
+              seen.add(m.id);
+              combined.push(m);
+            }
+          }
+          return combined.sort((a, b) => (b.volumeUsdc || 0) - (a.volumeUsdc || 0)).slice(0, limit);
+        }
+      }
+    }
+
+    return live;
+  } catch (err: any) {
+    console.warn("[getTrendingMarkets Error]:", err.message);
+    return [];
+  }
+}
