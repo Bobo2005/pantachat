@@ -159,7 +159,7 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
     components.push(row1);
   }
 
-  // Row 2: In-place Refresh, Details & Custom Bet
+  // Row 2: In-place Refresh, Details, Custom Bet, Share & WebApp
   const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`refresh_${market.id}`)
@@ -174,9 +174,13 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
       .setLabel("⚙️ Custom Bet")
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId(`share_mkt_btn_${market.id}`)
+      .setLabel("🔗 Share")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
       .setLabel("🌐 WebApp")
       .setStyle(ButtonStyle.Link)
-      .setURL(`${config.WEBAPP_URL}/market/${market.id}`)
+      .setURL(`${config.WEBAPP_URL}/?market=${market.id}`)
   );
   components.push(row2);
 

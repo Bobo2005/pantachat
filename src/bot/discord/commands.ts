@@ -103,6 +103,17 @@ export const commandDefinitions = [
   new ContextMenuCommandBuilder()
     .setName("Make a prediction market")
     .setType(ApplicationCommandType.Message),
+
+  // 7. Slash Command: /share [market_id]
+  new SlashCommandBuilder()
+    .setName("share")
+    .setDescription("Share a prediction market to this channel with live odds & quick-bet buttons")
+    .addStringOption((opt) =>
+      opt
+        .setName("market_id")
+        .setDescription("Market ID to share (optional, defaults to top trending)")
+        .setRequired(false)
+    ),
 ];
 
 // =============================================================================
@@ -372,6 +383,18 @@ async function handlePositionsCommand(interaction: ChatInputCommandInteraction):
       .setURL(`${config.WEBAPP_URL}/positions`)
   );
 
+  if (userTrades.length > 0) {
+    const top = userTrades[0];
+    const outcome = (top.outcome || "yes").toLowerCase();
+    const spend = Math.round(top.spendUsdc || 20);
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`share_pos_btn_${top.marketId}_${outcome}_${spend}`)
+        .setLabel("📤 Share Top Bet")
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+
   if (userTrades.length === 0) {
     await interaction.editReply({
       content:
@@ -609,6 +632,82 @@ async function handleTrendingCommand(interaction: ChatInputCommandInteraction): 
   }
 }
 
+/**
+ * Handle /share [market_id]
+ */
+async function handleShareCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+  const inputMarketId = interaction.options.getString("market_id");
+
+  let market: any = null;
+  if (inputMarketId) {
+    try {
+      market = await getMarketById(inputMarketId.trim());
+    } catch {
+      // not found, fallback to trending
+    }
+  }
+
+  if (!market) {
+    const trending = await getTrendingMarkets(1);
+    market = trending[0] || null;
+  }
+
+  if (!market) {
+    await interaction.editReply({
+      content: "⚠️ No active markets found to share. Try drafting one with `/market`!",
+    });
+    return;
+  }
+
+  const yesPrice = Number(market.yesPrice) || 0.5;
+  const noPrice = Number(market.noPrice) || 0.5;
+  const total = yesPrice + noPrice;
+  const yesProb = total > 0 ? yesPrice / total : 0.5;
+  const yesPercent = Math.round(yesProb * 100);
+  const noPercent = 100 - yesPercent;
+  const progressBar = generateProgressBar(yesPercent, 10);
+  const yesMultiplier = yesPrice > 0 ? (1 / yesPrice).toFixed(2) : "0.00";
+  const noMultiplier = noPrice > 0 ? (1 / noPrice).toFixed(2) : "0.00";
+  const volumeStr = formatUsdc(market.volumeUsdc || 0);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🔥 ${market.title}`)
+    .setColor(0x38bdf8) // #38bdf8 brand accent color
+    .setDescription(
+      `Shared by <@${interaction.user.id}>\n\n` +
+      `📊 **Sentiment & Odds:**\n\`${progressBar}\`\n` +
+      `🟢 **YES ${yesPercent}%** ($${yesPrice.toFixed(2)}) • 🔴 **${noPercent}% NO** ($${noPrice.toFixed(2)})\n\n` +
+      `💰 **Est. Win Multipliers:**\n• YES: **${yesMultiplier}x** • NO: **${noMultiplier}x**\n\n` +
+      `📈 **Volume:** **${volumeStr}**`
+    )
+    .setFooter({ text: "⚡ Shared via PantaChat • Non-Custodial Prediction Markets" })
+    .setTimestamp();
+
+  const userHandle = interaction.user.username || "trader";
+  const shareWebUrl = `${config.WEBAPP_URL}/?market=${encodeURIComponent(market.id)}&ref=${encodeURIComponent(userHandle)}`;
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`buy_${market.id}_yes_5`)
+      .setLabel("🟢 Bet YES $5")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`buy_${market.id}_no_5`)
+      .setLabel("🔴 Bet NO $5")
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setLabel("🌐 Open & Share on WebApp")
+      .setStyle(ButtonStyle.Link)
+      .setURL(shareWebUrl)
+  );
+
+  await interaction.editReply({
+    embeds: [embed],
+    components: [row],
+  });
+}
+
 // =============================================================================
 // Register Discord Interaction Listeners
 // =============================================================================
@@ -651,6 +750,10 @@ export function registerDiscordCommands(client: Client): void {
             break;
           case "faucet":
             await handleFaucetCommand(interaction);
+            break;
+          case "share":
+            await handleShareCommand(interaction);
+            break;
         }
         return;
       }

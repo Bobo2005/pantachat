@@ -17,6 +17,10 @@ export interface TelegramContextType {
   expand: () => void;
   close: () => void;
   openExternalBrowser: (url: string) => void;
+  switchInlineQuery: (
+    query: string,
+    choose_chat_types?: ("users" | "bots" | "groups" | "channels")[]
+  ) => void;
 }
 
 const TelegramContext = createContext<TelegramContextType>({
@@ -26,6 +30,7 @@ const TelegramContext = createContext<TelegramContextType>({
   expand: () => {},
   close: () => {},
   openExternalBrowser: () => {},
+  switchInlineQuery: () => {},
 });
 
 export function TelegramProvider({ children }: { children: React.ReactNode }) {
@@ -80,6 +85,18 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const switchInlineQuery = (
+    query: string,
+    choose_chat_types: ("users" | "bots" | "groups" | "channels")[] = ["users", "groups", "channels"]
+  ) => {
+    if (typeof window !== "undefined") {
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg && tg.switchInlineQuery) {
+        tg.switchInlineQuery(query, choose_chat_types);
+      }
+    }
+  };
+
   return (
     <TelegramContext.Provider
       value={{
@@ -89,6 +106,7 @@ export function TelegramProvider({ children }: { children: React.ReactNode }) {
         expand,
         close,
         openExternalBrowser,
+        switchInlineQuery,
       }}
     >
       {/* 1-tap External Browser fallback banner for mobile Phantom deep-linking */}

@@ -1,8 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import { getAllLiveMarkets } from "@/lib/markets";
+import { useTelegram } from "@/components/TelegramProvider";
+import { shareMarket } from "@/utils/share";
 
 // =============================================================================
 // Market Data Interfaces
@@ -52,7 +55,10 @@ function formatMarketEntry(m: any): MarketItem {
   };
 }
 
-export default function MarketExplorer() {
+function MarketExplorerContent() {
+  const searchParams = useSearchParams();
+  const { isTelegram, user, switchInlineQuery } = useTelegram();
+
   // Pre-seed with live markets so page renders markets instantly on first load
   const [markets, setMarkets] = useState<MarketItem[]>(() =>
     getAllLiveMarkets().map(formatMarketEntry)
@@ -63,12 +69,19 @@ export default function MarketExplorer() {
   const [searchQuery, setSearchQuery] = useState("");
   const [chartMode, setChartMode] = useState<"price" | "volume">("price");
   const [timeframe, setTimeframe] = useState("7D");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [hasHandledDeepLink, setHasHandledDeepLink] = useState(false);
 
   // Quick Buy Modal State
   const [activeModalMarket, setActiveModalMarket] = useState<MarketItem | null>(null);
   const [selectedOutcome, setSelectedOutcome] = useState<"yes" | "no">("yes");
   const [spendAmount, setSpendAmount] = useState<number>(20);
   const [customInput, setCustomInput] = useState<string>("20");
+
+  const triggerToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // Fetch Real Dynamic Markets from Backend / Panta Protocol
   const fetchMarkets = async () => {
@@ -91,6 +104,39 @@ export default function MarketExplorer() {
   useEffect(() => {
     fetchMarkets();
   }, []);
+
+  // Deep-Link & Referral Resolution (?market=<id>&ref=<handle>&side=<yes|no>)
+  useEffect(() => {
+    if (!searchParams) return;
+    const targetMarketId = searchParams.get("market");
+    const ref = searchParams.get("ref");
+    const side = searchParams.get("side")?.toLowerCase();
+
+    if (ref && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("pantachat_ref", ref);
+      } catch {}
+    }
+
+    if (targetMarketId && markets.length > 0 && !hasHandledDeepLink) {
+      const matched = markets.find(
+        (m) => String(m.id).toLowerCase() === targetMarketId.toLowerCase()
+      );
+      if (matched) {
+        setHasHandledDeepLink(true);
+        if (matched.phase === "resolved") {
+          setStatusFilter("resolved");
+        } else {
+          setStatusFilter("active");
+        }
+        setSelectedCategory("All");
+
+        const targetSide: "yes" | "no" = side === "no" ? "no" : "yes";
+        openBuyModal(matched, targetSide);
+        triggerToast(`🎯 Loaded shared market: "${matched.title.slice(0, 32)}..."`);
+      }
+    }
+  }, [searchParams, markets, hasHandledDeepLink]);
 
   const activeMarketsCount = markets.filter((m) => m.phase !== "resolved").length;
   const resolvedMarketsCount = markets.filter((m) => m.phase === "resolved").length;
@@ -119,6 +165,23 @@ export default function MarketExplorer() {
     setCustomInput("20");
   };
 
+  const handleShareMarket = async (market: MarketItem) => {
+    const userHandle = user?.username || user?.first_name || "trader";
+    const res = await shareMarket({
+      marketId: market.id,
+      marketTitle: market.title,
+      yesPercent: market.yesPercent,
+      noPercent: market.noPercent,
+      userHandle,
+      isTelegram,
+      switchInlineQuery,
+    });
+
+    if (res.message) {
+      triggerToast(res.message);
+    }
+  };
+
   const handleProceedToSign = () => {
     if (!activeModalMarket) return;
     const finalAmount = parseFloat(customInput) || spendAmount || 0;
@@ -127,7 +190,9 @@ export default function MarketExplorer() {
       return;
     }
     const sessionId = `sess_buy_${Date.now()}`;
-    window.location.href = `/sign?session=${sessionId}&market=${activeModalMarket.id}&outcome=${selectedOutcome}&amount=${finalAmount}`;
+    const storedRef = typeof window !== "undefined" ? localStorage.getItem("pantachat_ref") : null;
+    const refQuery = storedRef ? `&ref=${encodeURIComponent(storedRef)}` : "";
+    window.location.href = `/sign?session=${sessionId}&market=${activeModalMarket.id}&outcome=${selectedOutcome}&amount=${finalAmount}${refQuery}`;
   };
 
   return (
@@ -201,9 +266,23 @@ export default function MarketExplorer() {
                 <span className="font-semibold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
                   <span>⚡</span> {heroMarket.category} • FEATURED
                 </span>
-                <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                  {heroMarket.phase === "secondary" ? "Graduated Secondary" : "Primary Curve"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    {heroMarket.phase === "secondary" ? "Graduated Secondary" : "Primary Curve"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleShareMarket(heroMarket);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] hover:border-[#38bdf8]/40 text-slate-300 hover:text-white font-mono text-[11px] transition cursor-pointer"
+                    title="Share Market"
+                  >
+                    <span>🔗</span>
+                    <span>Share</span>
+                  </button>
+                </div>
               </div>
 
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
@@ -454,21 +533,35 @@ export default function MarketExplorer() {
                           <span className="bg-[#181f2c] px-2 py-0.5 rounded text-slate-300">
                             {market.category}
                           </span>
-                          {isResolved ? (
-                            <span
-                              className={`px-2 py-0.5 rounded font-bold border ${
-                                winOutcome === "yes"
-                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                                  : winOutcome === "no"
-                                  ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
-                                  : "bg-slate-800 text-slate-300 border-slate-700"
-                              }`}
+                          <div className="flex items-center gap-2">
+                            {isResolved ? (
+                              <span
+                                className={`px-2 py-0.5 rounded font-bold border ${
+                                  winOutcome === "yes"
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                                    : winOutcome === "no"
+                                    ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
+                                    : "bg-slate-800 text-slate-300 border-slate-700"
+                                }`}
+                              >
+                                🏆 {winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}
+                              </span>
+                            ) : (
+                              <span>{market.timestamp}</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShareMarket(market);
+                              }}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#121721] hover:bg-[#1a2232] border border-[#1e2638] hover:border-[#38bdf8]/40 text-slate-300 hover:text-[#38bdf8] text-[10px] font-mono transition cursor-pointer"
+                              title="Share Market"
                             >
-                              🏆 {winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}
-                            </span>
-                          ) : (
-                            <span>{market.timestamp}</span>
-                          )}
+                              <span>🔗</span>
+                              <span>Share</span>
+                            </button>
+                          </div>
                         </div>
 
                         <h3 className="font-heading font-semibold text-sm text-white leading-snug line-clamp-2 group-hover:text-[#38bdf8] transition">
@@ -594,12 +687,22 @@ export default function MarketExplorer() {
               <span className="text-[11px] font-mono text-slate-400">
                 ⚡ Quick Buy • {activeModalMarket.category}
               </span>
-              <button
-                onClick={() => setActiveModalMarket(null)}
-                className="text-slate-500 hover:text-white transition text-sm cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleShareMarket(activeModalMarket)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] text-slate-300 hover:text-white text-xs font-mono transition cursor-pointer"
+                  title="Share Market"
+                >
+                  <span>🔗</span> Share
+                </button>
+                <button
+                  onClick={() => setActiveModalMarket(null)}
+                  className="text-slate-500 hover:text-white transition text-sm cursor-pointer p-1"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Market Title */}
@@ -731,10 +834,31 @@ export default function MarketExplorer() {
         </div>
       )}
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-bounce bg-[#181f2c] border border-[#38bdf8]/50 text-white px-4 py-2.5 rounded-lg shadow-xl shadow-black/50 text-xs font-mono flex items-center gap-2 backdrop-blur-md">
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="w-full border-t border-[#1e2638] py-4 text-center text-xs font-mono text-slate-500">
         PantaChat • Built with Panta Protocol on Solana Devnet • Colosseum Renaissance Hackathon
       </footer>
     </div>
+  );
+}
+
+export default function MarketExplorer() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0b0e14] flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-[#38bdf8] border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <MarketExplorerContent />
+    </Suspense>
   );
 }

@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import Navbar from "@/components/Navbar";
 import WalletButton from "@/components/WalletButton";
+import { useTelegram } from "@/components/TelegramProvider";
+import { sharePosition } from "@/utils/share";
 
 export interface PositionItem {
   id: string;
@@ -20,12 +22,20 @@ export interface PositionItem {
   isClaimed: boolean;
   claimableUsdc?: number;
   txSignature?: string;
+  oddsPercent?: number;
 }
 
 export default function PositionsPage() {
   const { connected, publicKey } = useWallet();
+  const { isTelegram, user, switchInlineQuery } = useTelegram();
   const [positions, setPositions] = useState<PositionItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
 
   const fetchPositions = async () => {
     if (!publicKey) {
@@ -84,6 +94,16 @@ export default function PositionsPage() {
             const matched = marketList.find(
               (m) => m.id === pos.marketId || m.title === pos.marketTitle
             );
+
+            if (matched) {
+              const yesPct =
+                typeof matched.yesPercent === "number"
+                  ? matched.yesPercent
+                  : Math.round((Number(matched.yesPrice) || 0.5) * 100);
+              const noPct = 100 - yesPct;
+              pos.oddsPercent = pos.outcome === "yes" ? yesPct : noPct;
+            }
+
             if (
               matched &&
               (matched.phase === "resolved" ||
@@ -139,6 +159,30 @@ export default function PositionsPage() {
   const handleClaim = (marketId: string) => {
     const sessionId = `sess_claim_${Date.now()}`;
     window.location.href = `/sign?session=${sessionId}&type=claim&market=${marketId}`;
+  };
+
+  const handleSharePos = async (pos: PositionItem) => {
+    const odds = pos.oddsPercent || 50;
+    const userHandle =
+      user?.username ||
+      (publicKey
+        ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`
+        : "trader");
+
+    const res = await sharePosition({
+      marketId: pos.marketId,
+      marketTitle: pos.marketTitle,
+      outcome: pos.outcome,
+      spendUsdc: pos.costUsdc || 20,
+      oddsPercent: odds,
+      userHandle,
+      isTelegram,
+      switchInlineQuery,
+    });
+
+    if (res.message) {
+      showToast(res.message);
+    }
   };
 
   return (
@@ -319,15 +363,26 @@ export default function PositionsPage() {
                       </div>
                     </div>
 
-                    {/* Action */}
-                    {isClaimable ? (
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-1">
+                      {isClaimable ? (
+                        <button
+                          onClick={() => handleClaim(pos.marketId)}
+                          className="flex-1 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <span>💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}</span>
+                        </button>
+                      ) : null}
                       <button
-                        onClick={() => handleClaim(pos.marketId)}
-                        className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
+                        onClick={() => handleSharePos(pos)}
+                        className={`${
+                          isClaimable ? "px-3.5" : "w-full"
+                        } py-2 rounded-lg bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] hover:border-[#38bdf8]/40 text-slate-200 text-xs font-mono font-medium transition cursor-pointer flex items-center justify-center gap-1.5`}
                       >
-                        <span>💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)} USDC Winnings</span>
+                        <span>📤</span>
+                        <span>Share Position</span>
                       </button>
-                    ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -391,20 +446,31 @@ export default function PositionsPage() {
                           </td>
 
                           <td className="py-3.5 px-4 text-right">
-                            {isClaimable ? (
+                            <div className="flex items-center justify-end gap-2">
+                              {isClaimable ? (
+                                <button
+                                  onClick={() => handleClaim(pos.marketId)}
+                                  className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-[11px] rounded transition shadow-md shadow-emerald-500/20 cursor-pointer"
+                                >
+                                  💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}
+                                </button>
+                              ) : pos.status === "won" && pos.isClaimed ? (
+                                <span className="text-emerald-400 text-[11px] font-bold">🟢 Won • Claimed ✓</span>
+                              ) : pos.status === "lost" ? (
+                                <span className="text-rose-400/80 text-[11px] font-medium">🔴 Lost</span>
+                              ) : (
+                                <span className="text-sky-400 text-[11px]">🔵 Active</span>
+                              )}
+
                               <button
-                                onClick={() => handleClaim(pos.marketId)}
-                                className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-[11px] rounded transition shadow-md shadow-emerald-500/20 cursor-pointer"
+                                onClick={() => handleSharePos(pos)}
+                                title="Share Position to Telegram or Discord"
+                                className="px-2.5 py-1 bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] hover:border-[#38bdf8]/50 text-slate-300 hover:text-white text-[11px] rounded transition cursor-pointer flex items-center gap-1"
                               >
-                                💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}
+                                <span>📤</span>
+                                <span>Share</span>
                               </button>
-                            ) : pos.status === "won" && pos.isClaimed ? (
-                              <span className="text-emerald-400 text-[11px] font-bold">🟢 Won • Claimed ✓</span>
-                            ) : pos.status === "lost" ? (
-                              <span className="text-rose-400/80 text-[11px] font-medium">🔴 Lost</span>
-                            ) : (
-                              <span className="text-sky-400 text-[11px]">🔵 Active</span>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -416,6 +482,13 @@ export default function PositionsPage() {
           </>
         )}
       </main>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#121721] text-white border border-[#38bdf8]/50 shadow-xl shadow-[#38bdf8]/10 px-4 py-2.5 rounded-lg text-xs font-mono flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       <footer className="w-full border-t border-[#1e2638] py-4 text-center text-xs font-mono text-slate-500">
         PantaChat • Built with Panta Protocol on Solana Devnet • Colosseum Renaissance Hackathon

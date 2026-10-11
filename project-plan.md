@@ -170,6 +170,28 @@ pantachat/
    - Explicitly calls `POST /trades/` with tx signature and `userId` after on-chain confirmation.
    - Leaderboard tracks top traders and top market creators across all groups.
 
+### Phase 6: Viral Growth & Social Bet Forwarding (Cross-Group Sharing) [COMPLETED]
+1. **Portfolio & Market Share Triggers:**
+   - [x] **WebApp & Mini App Portfolio (`/positions`):** Added `[ 📤 Share Position ]` button on each active position card displaying outcome, size, and current live odds.
+   - [x] **Universal Market Card Share:** Added `[ 🔗 Share ]` button on each prediction card across the main explorer (`/`), Hero market, and Quick Buy modal sheet.
+2. **Telegram Native Share & Inline Integration:**
+   - [x] Implemented `Telegram.WebApp.switchInlineQuery()` so tapping "Share" triggers Telegram's native chat picker (groups, channels, friends).
+   - [x] Registered inline query handler on `@pantachat_bot` (`src/bot/telegram/inline.ts`):
+     - Generates rich interactive card preview.
+     - Includes personalized sharer stance: *"🎯 POSITION SHARED BY @{user}"*.
+     - Sentiment progress bar & live odds.
+     - Interactive counter-bet action buttons: `[ 🟢 Ride with YES $5 ]` and `[ 🔴 Fade with NO $5 ]` (or dynamically swapped for NO holders).
+   - [x] Implemented deep-link for new group onboarding: `https://t.me/pantachat_bot?startgroup=share_mkt_<id>` and `share_pos_...` dropping interactive betting cards directly into new groups upon joining.
+3. **Universal Web & Discord Sharing:**
+   - [x] Web share fallback using native Web Share API (`navigator.share`), clipboard copy, and direct Telegram universal link `https://t.me/share/url?url=...`.
+   - [x] Discord `/share [market_id]` slash command with `#38bdf8` embed, channel quick-bet buttons, and WebApp link.
+   - [x] Ephemeral `[ 🔗 Share ]` buttons on Discord market cards and `/positions` with copy-pasteable invite snippets.
+4. **Viral Loop & Privacy Verification:**
+   - [x] Verified zero wallet doxxing (no raw public keys or private signatures in shared cards—only pseudonymous handle and stance).
+   - [x] Ensured direct counter-bet buttons deep-link directly into the 1-tap Phantom signing sheet without leaving Telegram or chat context.
+   - [x] Confirmed creator royalty attribution and referrer tagging persists throughout signing flow.
+   - [x] Discord button URLs strictly `<= 512` characters and custom IDs `<= 100` characters.
+
 ---
 
 ## 3. Hackathon 10-Day Milestones

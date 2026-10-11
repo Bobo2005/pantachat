@@ -164,5 +164,5 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
 
 ### Project Links & Resources
 - **Live WebApp & Explorer:** [https://pantachat.vercel.app](https://pantachat.vercel.app)
-- **Telegram Bot:** [@pinkpanta_bot](https://t.me/pinkpanta_bot)
+- **Telegram Bot:** [@pantachat_bot](https://t.me/pantachat_bot)
 - **GitHub Repository:** [https://github.com/Bobo2005/pantachat](https://github.com/Bobo2005/pantachat)

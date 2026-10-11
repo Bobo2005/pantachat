@@ -10,6 +10,7 @@ import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
 import { formatUsdc } from "../../utils/formatters.js";
 import { config } from "../../config.js";
+import { handleInlineQuery } from "./inline.js";
 
 // =============================================================================
 // Helper: Extract Text from Direct Message or Reply
@@ -43,25 +44,146 @@ function extractBanterText(ctx: Context): string {
 
 export function registerTelegramCommands(bot: Telegraf): void {
   // ---------------------------------------------------------------------------
-  // /start [payload]
+  // Register Inline Query Handler (@pantachat_bot <query>)
+  // ---------------------------------------------------------------------------
+  bot.on("inline_query", handleInlineQuery);
+
+  // ---------------------------------------------------------------------------
+  // /start [payload] (Supports Group Onboarding via startgroup=...)
   // ---------------------------------------------------------------------------
   bot.command("start", async (ctx) => {
-    const payload = (ctx as any).payload || "";
+    const rawPayload = ((ctx as any).payload || "").trim();
+    const payload = rawPayload.replace(/^startgroup=/, "");
 
-    // Deep-link routing for market cards: /start market_<id>
-    if (payload.startsWith("market_") || payload.startsWith("mkt_")) {
-      const marketId = payload.replace(/^market_/, "");
+    // 1. Position Share Deep-Link: share_pos_<marketId>_<outcome>_<spend>
+    if (payload.startsWith("share_pos_")) {
+      const match = payload.match(/^share_pos_([^_]+)_(yes|no)_(\d+)/i);
+      if (match) {
+        const marketId = match[1];
+        const outcome = match[2].toLowerCase() as "yes" | "no";
+        const spend = Number(match[3]) || 20;
+
+        try {
+          const market = await getMarketById(marketId);
+          if (market) {
+            const yesPrice = Number(market.yesPrice) || 0.5;
+            const noPrice = Number(market.noPrice) || 0.5;
+            const total = yesPrice + noPrice;
+            const yesPct = Math.round((total > 0 ? yesPrice / total : 0.5) * 100);
+            const noPct = 100 - yesPct;
+            const progressBar = generateProgressBar(yesPct, 10);
+            const outcomeEmoji = outcome === "yes" ? "🟢" : "🔴";
+            const userHandle = ctx.from?.username
+              ? `@${ctx.from.username}`
+              : ctx.from?.first_name || "A member";
+
+            const cardText = [
+              `🎯 *POSITION SHARED BY ${userHandle}*`,
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+              `*"${market.title}"*`,
+              ``,
+              `Stance: *${outcomeEmoji} ${outcome.toUpperCase()}* (Spent $${spend} USDC)`,
+              `📊 Current Odds: YES ${yesPct}% ${progressBar} ${noPct}% NO`,
+              ``,
+              `_Think they're wrong? Fade their position right now:_`,
+              `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            ].join("\n");
+
+            const rideOutcome = outcome;
+            const fadeOutcome = outcome === "yes" ? "no" : "yes";
+            const rideEmoji = outcome === "yes" ? "🟢" : "🔴";
+            const fadeEmoji = outcome === "yes" ? "🔴" : "🟢";
+
+            const buttons = [
+              [
+                {
+                  text: `${rideEmoji} Ride with ${rideOutcome.toUpperCase()} $5`,
+                  callback_data: `buy_${market.id}_${rideOutcome}_5`,
+                },
+                {
+                  text: `${fadeEmoji} Fade with ${fadeOutcome.toUpperCase()} $5`,
+                  callback_data: `buy_${market.id}_${fadeOutcome}_5`,
+                },
+              ],
+              [
+                {
+                  text: "🚀 Open in Mini App",
+                  url: `https://t.me/${config.TELEGRAM_BOT_USERNAME}?startapp=mkt_${market.id}`,
+                },
+                { text: "🔄 Refresh Odds", callback_data: `refresh_${market.id}` },
+              ],
+            ];
+
+            return ctx.reply(cardText, {
+              parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: buttons as any },
+            });
+          }
+        } catch (err: any) {
+          console.warn("[Telegram /start] Failed loading deep-linked position market:", err.message);
+        }
+      }
+    }
+
+    // 2. Market Share Deep-Link: share_mkt_<id>, market_<id>, mkt_<id>
+    if (
+      payload.startsWith("share_mkt_") ||
+      payload.startsWith("market_") ||
+      payload.startsWith("mkt_")
+    ) {
+      const marketId = payload.replace(/^(share_mkt_|market_|mkt_)/, "");
       try {
         const market = await getMarketById(marketId);
-        const cardText = buildMarketCardText(market);
-        const buttons = getPresetBuyButtons(market.id, market.phase);
+        if (market) {
+          const yesPrice = Number(market.yesPrice) || 0.5;
+          const noPrice = Number(market.noPrice) || 0.5;
+          const total = yesPrice + noPrice;
+          const yesPct = Math.round((total > 0 ? yesPrice / total : 0.5) * 100);
+          const noPct = 100 - yesPct;
+          const progressBar = generateProgressBar(yesPct, 10);
+          const yesMultiplier = yesPrice > 0 ? (1 / yesPrice).toFixed(2) : "0.00";
+          const noMultiplier = noPrice > 0 ? (1 / noPrice).toFixed(2) : "0.00";
+          const volumeStr = formatUsdc(market.volumeUsdc || 0);
+          const statusBadge =
+            market.phase === "secondary" ? "🟣 Graduated Secondary" : "🟢 Live Primary Curve";
 
-        return ctx.reply(cardText, {
-          parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: buttons as any },
-        });
-      } catch (err) {
-        console.warn(`[Telegram /start] Failed loading deep-linked market ${marketId}:`, err);
+          const cardText = [
+            `🔥 *PREDICTION MARKET ON PANTA*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `*"${market.title}"*`,
+            ``,
+            `📊 Current Odds: YES ${yesPct}% ${progressBar} ${noPct}% NO`,
+            ``,
+            `💰 *Est. Win Multipliers:*`,
+            `• YES: *${yesMultiplier}x* (Spot: $${yesPrice.toFixed(2)})`,
+            `• NO:  *${noMultiplier}x* (Spot: $${noPrice.toFixed(2)})`,
+            ``,
+            `📈 Volume: *${volumeStr}* • Status: *${statusBadge}*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `⚡ *Trade non-custodially on Solana Devnet*`,
+          ].join("\n");
+
+          const buttons = [
+            [
+              { text: "🟢 Buy YES $5", callback_data: `buy_${market.id}_yes_5` },
+              { text: "🔴 Buy NO $5", callback_data: `buy_${market.id}_no_5` },
+            ],
+            [
+              {
+                text: "🚀 Open in Mini App",
+                url: `https://t.me/${config.TELEGRAM_BOT_USERNAME}?startapp=mkt_${market.id}`,
+              },
+              { text: "🔄 Refresh Odds", callback_data: `refresh_${market.id}` },
+            ],
+          ];
+
+          return ctx.reply(cardText, {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard: buttons as any },
+          });
+        }
+      } catch (err: any) {
+        console.warn(`[Telegram /start] Failed loading deep-linked market ${marketId}:`, err.message);
       }
     }
 

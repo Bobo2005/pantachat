@@ -71,7 +71,7 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
     const amount = Number(ctx.match[4]);
 
     const platformUserId = ctx.from?.username || String(ctx.from?.id || "unknown");
-    const chatId = String(ctx.chat?.id || "");
+    const chatId = ctx.chat?.id ? String(ctx.chat.id) : "inline";
 
     try {
       // Create ephemeral trade session in DB
@@ -84,32 +84,48 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
         amountUsdc: amount,
       });
 
-      await ctx.answerCbQuery(`Opening $${amount} ${outcome.toUpperCase()} signing sheet...`).catch(() => {});
-
-      // Reply with Telegram Mini App (TMA) web_app button + external fallback
-      await ctx.reply(
+      const messageText =
         `🎯 *Ready to place bet:* $${amount} on *${outcome.toUpperCase()}*\n` +
-          `Tap below to sign non-custodially in Phantom without leaving Telegram:`,
-        {
+        `Tap below to sign non-custodially in Phantom without leaving Telegram:`;
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: `⚡ Sign $${amount} ${outcome.toUpperCase()} (Mini App)`,
+              web_app: { url: session.signUrl },
+            },
+          ],
+          [
+            {
+              text: "🌐 Open in External Browser",
+              url: session.signUrl,
+            },
+          ],
+        ],
+      };
+
+      if (ctx.chat?.id) {
+        await ctx.reply(messageText, {
           parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: `⚡ Sign $${amount} ${outcome.toUpperCase()} (Mini App)`,
-                  web_app: { url: session.signUrl },
-                },
-              ],
-              [
-                {
-                  text: "🌐 Open in External Browser",
-                  url: session.signUrl,
-                },
-              ],
-            ],
-          },
-        }
-      );
+          reply_markup: replyMarkup,
+        });
+        await ctx.answerCbQuery(`Opening $${amount} ${outcome.toUpperCase()} signing sheet...`).catch(() => {});
+      } else if (ctx.from?.id) {
+        // Callback invoked from an inline message in external group/DM
+        await ctx.telegram
+          .sendMessage(ctx.from.id, messageText, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          })
+          .catch(() => {});
+        await ctx
+          .answerCbQuery(
+            `Opening $${amount} ${outcome.toUpperCase()} signing sheet! Check your DM with @${config.TELEGRAM_BOT_USERNAME}.`
+          )
+          .catch(() => {});
+      } else {
+        await ctx.answerCbQuery(`Opening $${amount} ${outcome.toUpperCase()} signing sheet...`).catch(() => {});
+      }
     } catch (err: any) {
       console.error("[Telegram Callback] Buy preset error:", err);
       await ctx.answerCbQuery("❌ Failed to initiate order session.").catch(() => {});
@@ -220,8 +236,12 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
         `• Time Left: ${stats.timeRemaining}\n` +
         `• Phase: ${stats.phase.toUpperCase()}`;
 
-      await ctx.answerCbQuery().catch(() => {});
-      await ctx.reply(text, { parse_mode: "Markdown" });
+      if (ctx.chat?.id) {
+        await ctx.answerCbQuery().catch(() => {});
+        await ctx.reply(text, { parse_mode: "Markdown" });
+      } else {
+        await ctx.answerCbQuery(text.replace(/\*/g, ""), { show_alert: true }).catch(() => {});
+      }
     } catch (err: any) {
       await ctx.answerCbQuery("ℹ️ Details currently unavailable.").catch(() => {});
     }

@@ -264,6 +264,92 @@ async function handleEphemeralEarnings(interaction: ButtonInteraction): Promise<
   });
 }
 
+/**
+ * Handle Ephemeral Share Market Button
+ * Format: share_mkt_btn_<marketId>
+ */
+async function handleShareMarketButton(interaction: ButtonInteraction, marketId: string): Promise<void> {
+  try {
+    const market = await getMarketById(marketId);
+    const yesPrice = Number(market.yesPrice) || 0.5;
+    const noPrice = Number(market.noPrice) || 0.5;
+    const total = yesPrice + noPrice;
+    const yesPct = Math.round((total > 0 ? yesPrice / total : 0.5) * 100);
+    const noPct = 100 - yesPct;
+    const userHandle = interaction.user.username || "trader";
+    const shareUrl = `${config.WEBAPP_URL}/?market=${encodeURIComponent(market.id)}&ref=${encodeURIComponent(userHandle)}`;
+
+    const shareSnippet = `🔥 Prediction Market: "${market.title}" (YES ${yesPct}% • NO ${noPct}%)\nTrade now on PantaChat: ${shareUrl}`;
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel("🌐 Open on WebApp")
+        .setStyle(ButtonStyle.Link)
+        .setURL(shareUrl)
+    );
+
+    await interaction.reply({
+      content:
+        `📋 **Copy & Share into Any Channel or DM:**\n` +
+        `\`\`\`text\n${shareSnippet}\n\`\`\`\n` +
+        `💡 *Friends who click your link will see you referred the trade and can place 1-tap bets!*`,
+      components: [row],
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (err: any) {
+    await interaction.reply({
+      content: `❌ Could not generate share link: ${err.message}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+/**
+ * Handle Ephemeral Share Position Button
+ * Format: share_pos_btn_<marketId>_<outcome>_<spend>
+ */
+async function handleSharePositionButton(
+  interaction: ButtonInteraction,
+  marketId: string,
+  outcome: string,
+  spend: number
+): Promise<void> {
+  try {
+    const market = await getMarketById(marketId);
+    const yesPrice = Number(market.yesPrice) || 0.5;
+    const noPrice = Number(market.noPrice) || 0.5;
+    const total = yesPrice + noPrice;
+    const yesPct = Math.round((total > 0 ? yesPrice / total : 0.5) * 100);
+    const noPct = 100 - yesPct;
+    const odds = outcome === "yes" ? yesPct : noPct;
+    const userHandle = interaction.user.username || "trader";
+    const shareUrl = `${config.WEBAPP_URL}/?market=${encodeURIComponent(market.id)}&ref=${encodeURIComponent(userHandle)}&side=${outcome}`;
+
+    const shareSnippet = `🎯 I'm holding ${outcome.toUpperCase()} on "${market.title}"! Current odds: ${odds}%. Agree or fade me on PantaChat: ${shareUrl}`;
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel("🌐 View on WebApp")
+        .setStyle(ButtonStyle.Link)
+        .setURL(shareUrl)
+    );
+
+    await interaction.reply({
+      content:
+        `🎯 **Your Position Share Call:**\n` +
+        `\`\`\`text\n${shareSnippet}\n\`\`\`\n` +
+        `💡 *Forward this snippet to challenge your friends to ride or fade your bet!*`,
+      components: [row],
+      flags: MessageFlags.Ephemeral,
+    });
+  } catch (err: any) {
+    await interaction.reply({
+      content: `❌ Could not generate position share: ${err.message}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
 // =============================================================================
 // Register Discord Interaction Listeners
 // =============================================================================
@@ -275,6 +361,27 @@ export function registerDiscordInteractions(client: Client): void {
 
     try {
       const customId = interaction.customId;
+
+      // Share Market Button (Ephemeral link generation)
+      if (customId.startsWith("share_mkt_btn_")) {
+        const marketId = customId.replace(/^share_mkt_btn_/, "");
+        await handleShareMarketButton(interaction, marketId);
+        return;
+      }
+
+      // Share Position Button (Ephemeral stance generation)
+      if (customId.startsWith("share_pos_btn_")) {
+        const match = customId.match(/^share_pos_btn_([^_]+)_(yes|no)_(\d+)/i);
+        if (match) {
+          await handleSharePositionButton(
+            interaction,
+            match[1],
+            match[2].toLowerCase(),
+            Number(match[3]) || 20
+          );
+          return;
+        }
+      }
 
       // Buy Preset Button
       const buyMatch = customId.match(/^buy_(.+?)_(yes|no)_(\d+)$/i);
