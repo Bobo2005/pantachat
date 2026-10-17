@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, type LiveMarket } from "@/lib/markets";
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_BOT_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN || "8957544318:AAF_X2mP2f22C70ml-98g5WvoN9LBsenMJE";
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+
+function escapeHtml(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 // =============================================================================
 // POST /api/sessions/[id]/submit
@@ -237,19 +245,19 @@ export async function POST(
         const creatorDisplay = creatorUser.startsWith("@") ? creatorUser : `@${creatorUser}`;
 
         const cardText = [
-          `🎉 *PREDICTION MARKET IS LIVE!*`,
+          `🎉 <b>PREDICTION MARKET IS LIVE!</b>`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `🎯 *${marketTitle}*`,
+          `🎯 <b>"${escapeHtml(marketTitle)}"</b>`,
           ``,
-          `👤 *Created by:* ${creatorDisplay}`,
-          `🏷️ *Category:* ${category}`,
-          `📈 *Initial Odds:* YES 50% • NO 50%`,
-          `📜 *Resolution Criteria:*`,
-          `${description || "Resolves per official rules."}`,
+          `👤 <b>Created by:</b> ${escapeHtml(creatorDisplay)}`,
+          `🏷️ <b>Category:</b> ${escapeHtml(category)}`,
+          `📈 <b>Initial Odds:</b> YES 50% • NO 50%`,
+          `📜 <b>Resolution Criteria:</b>`,
+          `${escapeHtml(description || "Resolves per official rules.")}`,
           ``,
-          `⛓️ [View On-Chain Tx on Solana Explorer](${explorerUrl})`,
+          `⛓️ <a href="${explorerUrl}">View On-Chain Tx on Solana Explorer</a>`,
           `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `👇 *Start trading right now inside chat:*`,
+          `👇 <b>Start trading right now inside chat:</b>`,
         ].join("\n");
 
         const replyMarkup = {
@@ -264,7 +272,7 @@ export async function POST(
             ],
             [
               { text: "📊 Market Details", callback_data: `details_${createdMarket.id}` },
-              { text: "🌐 Open on PantaChat", url: "https://pantachat.vercel.app" },
+              { text: "🌐 Open on PantaChat", url: `https://pantachat.vercel.app/?market=${createdMarket.id}` },
             ],
           ],
         };
@@ -277,7 +285,7 @@ export async function POST(
             body: JSON.stringify({
               chat_id: chatId,
               text: cardText,
-              parse_mode: "Markdown",
+              parse_mode: "HTML",
               reply_markup: replyMarkup,
             }),
           }

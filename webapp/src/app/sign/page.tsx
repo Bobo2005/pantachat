@@ -192,16 +192,19 @@ function SigningFlow() {
     const effectiveUser = session?.platformUserId || queryCreator || "trader";
     const effectiveTitle = session?.payload?.title || session?.market?.title || queryTitle || "Prediction Market";
     const effectiveMarketId = (session?.payload as any)?.marketId || session?.market?.id || queryMarketId;
+    const effectiveCategory = queryCategory || session?.payload?.category || (session?.market as any)?.category || "Crypto";
     const effectiveOutcome = (session?.payload as any)?.outcome || queryOutcome;
     const effectiveAmount = activeAmount || (session?.payload as any)?.amountUsdc || queryAmount;
 
     const bragPayload = {
       sessionId,
+      type: isCreateSession ? "create" : "buy",
       platform: effectivePlatform,
       chatId: effectiveChatId,
       userHandle: effectiveUser,
       marketTitle: effectiveTitle,
       marketId: effectiveMarketId,
+      category: effectiveCategory,
       outcome: effectiveOutcome,
       amount: effectiveAmount,
     };
@@ -215,7 +218,10 @@ function SigningFlow() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(bragPayload),
         });
-        if (res.ok) sent = true;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && !data.error) sent = true;
+        }
       } catch {}
 
       // 2. Central backend API fallback if configured
@@ -226,7 +232,10 @@ function SigningFlow() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(bragPayload),
           });
-          if (res2.ok) sent = true;
+          if (res2.ok) {
+            const data2 = await res2.json();
+            if (data2.success && !data2.error) sent = true;
+          }
         } catch {}
       }
 
@@ -235,11 +244,32 @@ function SigningFlow() {
         setBragMessage("");
       } else {
         setBragState("error");
-        setBragMessage("⚠️ Could not share to chat, but your on-chain trade is confirmed.");
+        setBragMessage("⚠️ Could not dispatch automatically. Tap 'Forward to Telegram Groups' below to share directly!");
       }
     } catch {
       setBragState("error");
-      setBragMessage("⚠️ Could not share to chat, but your on-chain trade is confirmed.");
+      setBragMessage("⚠️ Could not dispatch automatically. Tap 'Forward to Telegram Groups' below to share directly!");
+    }
+  };
+
+  const handleShareToTelegramGroups = () => {
+    const effectiveTitle = session?.payload?.title || session?.market?.title || queryTitle || "Prediction Market";
+    const effectiveMarketId = (session?.payload as any)?.marketId || session?.market?.id || queryMarketId;
+    const marketUrl = effectiveMarketId
+      ? `https://t.me/pantachat_bot?start=market_${effectiveMarketId}`
+      : "https://t.me/pantachat_bot";
+    const shareText = isCreateSession
+      ? `🚀 I just launched a new prediction market on PantaChat:\n\n"${effectiveTitle}"\n\nTrade YES or NO with 1 tap on Solana:`
+      : `🎯 Check out my prediction on "${effectiveTitle}" via PantaChat! Counter-bet me now:`;
+
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(marketUrl)}&text=${encodeURIComponent(shareText)}`;
+
+    if (typeof window !== "undefined") {
+      if ((window as any).Telegram?.WebApp?.openTelegramLink) {
+        (window as any).Telegram.WebApp.openTelegramLink(tgShareUrl);
+      } else {
+        window.open(tgShareUrl, "_blank", "noopener,noreferrer");
+      }
     }
   };
 
@@ -1153,18 +1183,20 @@ function SigningFlow() {
                   <div className="flex flex-col gap-1 text-left">
                     <div className="text-[11px] font-mono font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <span>📢</span>
-                      <span>Share Your Prediction</span>
+                      <span>{isCreateSession ? "Share Your Market" : "Share Your Prediction"}</span>
                       <span className="text-[10px] text-emerald-400 font-normal lowercase bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
                         privacy preserved
                       </span>
                     </div>
                     <p className="text-[11px] font-mono text-slate-400 leading-relaxed">
-                      Flex in your community group without exposing your personal Solana wallet address. Friends can counter-bet with 1 tap.
+                      {isCreateSession
+                        ? "Broadcast your new prediction market to your community group so members can trade YES or NO with 1 tap."
+                        : "Flex in your community group without exposing your personal Solana wallet address. Friends can counter-bet with 1 tap."}
                     </p>
                   </div>
 
                   <div className="flex flex-col gap-2 pt-0.5">
-                    {/* Button 1 (Primary): [ 📢 Brag in Chat ] (Shown whenever queryChatId or session chatId is present) */}
+                    {/* Button 1 (Primary): [ 📢 Share Market in Chat / Brag in Chat ] */}
                     {hasChat && (
                       <button
                         type="button"
@@ -1181,20 +1213,30 @@ function SigningFlow() {
                         {bragState === "sharing" ? (
                           <>
                             <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                            <span>sharing...</span>
+                            <span>broadcasting to chat...</span>
                           </>
                         ) : bragState === "shared" ? (
-                          <span>✅ Flex Shared to Chat!</span>
+                          <span>{isCreateSession ? "✅ Market Shared to Chat!" : "✅ Flex Shared to Chat!"}</span>
                         ) : (
                           <>
                             <span>📢</span>
-                            <span>Brag in Chat</span>
+                            <span>{isCreateSession ? "Share Market in Chat" : "Brag in Chat"}</span>
                           </>
                         )}
                       </button>
                     )}
 
-                    {/* Button 2 (Secondary): [ 🐦 Share on X ] */}
+                    {/* Button 2: [ 📲 Forward to Telegram Groups ] */}
+                    <button
+                      type="button"
+                      onClick={handleShareToTelegramGroups}
+                      className="w-full py-2.5 px-3 rounded-md bg-[#229ed9]/15 hover:bg-[#229ed9]/25 border border-[#229ed9]/40 text-[#229ed9] hover:text-[#5bc4f7] text-xs font-mono font-semibold transition cursor-pointer flex items-center justify-center gap-2 active:scale-[0.99]"
+                    >
+                      <span>📲</span>
+                      <span>Forward to Telegram Groups</span>
+                    </button>
+
+                    {/* Button 3: [ 🐦 Share on X ] */}
                     <button
                       type="button"
                       onClick={handleShareOnX}

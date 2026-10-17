@@ -251,60 +251,107 @@ export interface BragNotificationParams {
   userHandle: string;
   marketTitle: string;
   marketId?: string | null;
-  outcome: "yes" | "no" | string;
-  amount: number;
+  category?: string | null;
+  type?: "create" | "buy" | string;
+  outcome?: "yes" | "no" | string;
+  amount?: number;
+}
+
+function escapeHtml(str: string): string {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**
  * Dispatches a privacy-preserving brag/flex card into Telegram or Discord.
+ * Supports both newly created prediction markets and placed bets.
  * NEVER outputs raw Solana wallet addresses or direct transaction signatures.
- * Includes instant counter-bet buttons so chat members can immediately take the other side.
  */
 export async function broadcastBragNotification(params: BragNotificationParams): Promise<void> {
-  const { platform, chatId, userHandle, marketTitle, marketId, outcome, amount } = params;
+  const { platform, chatId, userHandle, marketTitle, marketId, category, type, outcome, amount } = params;
   if (!chatId) return;
 
-  const outcomeUpper = String(outcome || "yes").toUpperCase();
-  const isYes = outcomeUpper === "YES";
-  const counterOutcome = isYes ? "no" : "yes";
-  const counterUpper = isYes ? "NO" : "YES";
-  const counterEmoji = isYes ? "🔴" : "🟢";
+  const isCreate = type === "create";
+  const userDisplay = userHandle.startsWith("@") ? userHandle : `@${userHandle}`;
 
   // 1. Dispatch to Telegram
   if (platform === "telegram") {
     try {
-      const userDisplay = userHandle.startsWith("@") ? userHandle : `@${userHandle}`;
-      const bragText = [
-        `🔥 *BET PLACED IN THE CHAT!*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `*${userDisplay}* just put *$${Number(amount || 20).toFixed(2)} USDC* on *${outcomeUpper}* ${isYes ? "🟢" : "🔴"}!`,
-        ``,
-        `🎯 *"${marketTitle}"*`,
-        ``,
-        `_Think they're wrong? Fade them right now:_`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-      ].join("\n");
+      let text = "";
+      let inline_keyboard: any[] = [];
 
-      const inline_keyboard = marketId
-        ? [
-            [
-              { text: `${counterEmoji} Fade: Bet ${counterUpper} $5`, callback_data: `buy_${marketId}_${counterOutcome}_5` },
-              { text: `${counterEmoji} Fade: Bet ${counterUpper} $20`, callback_data: `buy_${marketId}_${counterOutcome}_20` },
-            ],
-            [
-              { text: "📊 Market Details", callback_data: `details_${marketId}` },
-              { text: "🌐 Open PantaChat", url: config.WEBAPP_URL },
-            ],
-          ]
-        : [[{ text: "🌐 Trade on PantaChat", url: config.WEBAPP_URL }]];
+      if (isCreate) {
+        text = [
+          `🚀 <b>NEW PREDICTION MARKET SHARED!</b>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `🎯 <b>"${escapeHtml(marketTitle)}"</b>`,
+          ``,
+          `👤 <b>Created &amp; Shared by:</b> ${escapeHtml(userDisplay)}`,
+          `🏷️ <b>Category:</b> ${escapeHtml(category || "Crypto")}`,
+          `📈 <b>Initial Odds:</b> YES 50% • 50% NO`,
+          `💰 <b>Initial Liquidity:</b> $50 USDC (Devnet)`,
+          ``,
+          `<i>Be the first to predict on this market:</i>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `👇 <b>Start trading right now inside chat:</b>`,
+        ].join("\n");
 
-      await bot.telegram.sendMessage(chatId, bragText, {
-        parse_mode: "Markdown",
+        inline_keyboard = marketId
+          ? [
+              [
+                { text: "🟢 Buy YES $5", callback_data: `buy_${marketId}_yes_5` },
+                { text: "🟢 Buy YES $20", callback_data: `buy_${marketId}_yes_20` },
+              ],
+              [
+                { text: "🔴 Buy NO $5", callback_data: `buy_${marketId}_no_5` },
+                { text: "🔴 Buy NO $20", callback_data: `buy_${marketId}_no_20` },
+              ],
+              [
+                { text: "📊 Open on PantaChat", url: `${config.WEBAPP_URL}/?market=${marketId}` },
+              ],
+            ]
+          : [[{ text: "🌐 Trade on PantaChat", url: config.WEBAPP_URL }]];
+      } else {
+        const outcomeUpper = String(outcome || "yes").toUpperCase();
+        const isYes = outcomeUpper === "YES";
+        const counterOutcome = isYes ? "no" : "yes";
+        const counterUpper = isYes ? "NO" : "YES";
+        const counterEmoji = isYes ? "🔴" : "🟢";
+
+        text = [
+          `🔥 <b>PREDICTION BET PLACED IN CHAT!</b>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          `<b>${escapeHtml(userDisplay)}</b> just put <b>$${Number(amount || 20).toFixed(2)} USDC</b> on <b>${outcomeUpper}</b> ${isYes ? "🟢" : "🔴"}!`,
+          ``,
+          `🎯 <b>"${escapeHtml(marketTitle)}"</b>`,
+          ``,
+          `<i>Think they're wrong? Fade them right now:</i>`,
+          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        ].join("\n");
+
+        inline_keyboard = marketId
+          ? [
+              [
+                { text: `${counterEmoji} Fade: Bet ${counterUpper} $5`, callback_data: `buy_${marketId}_${counterOutcome}_5` },
+                { text: `${counterEmoji} Fade: Bet ${counterUpper} $20`, callback_data: `buy_${marketId}_${counterOutcome}_20` },
+              ],
+              [
+                { text: "📊 Market Details", callback_data: `details_${marketId}` },
+                { text: "🌐 Open on PantaChat", url: `${config.WEBAPP_URL}/?market=${marketId}` },
+              ],
+            ]
+          : [[{ text: "🌐 Trade on PantaChat", url: config.WEBAPP_URL }]];
+      }
+
+      await bot.telegram.sendMessage(chatId, text, {
+        parse_mode: "HTML",
         reply_markup: { inline_keyboard },
       });
-      console.log(`✅ [Market Notifier] Telegram brag flex posted to ${chatId} for ${userDisplay}`);
+      console.log(`✅ [Market Notifier] Telegram share posted to ${chatId} for ${userDisplay}`);
     } catch (err: any) {
-      console.warn(`⚠️ [Market Notifier] Telegram brag flex warning:`, err.message);
+      console.warn(`⚠️ [Market Notifier] Telegram share warning:`, err.message);
     }
   }
 
@@ -319,50 +366,84 @@ export async function broadcastBragNotification(params: BragNotificationParams):
           ? userHandle
           : `@${userHandle}`;
 
-        const embed = new EmbedBuilder()
-          .setTitle("🔥 Prediction Bet Placed in the Channel!")
-          .setColor(isYes ? 0x10b981 : 0xef4444)
-          .setDescription(
-            `**${userMention}** just locked in **$${Number(amount || 20).toFixed(2)} USDC** on **${outcomeUpper}** ${isYes ? "🟢" : "🔴"}!\n\n` +
-            `🎯 **"${marketTitle}"**\n\n` +
-            `*Think they're wrong? Take the opposite side right now:*`
-          )
-          .setFooter({ text: "PantaChat • Non-Custodial Social Betting" });
-
+        let embed: any;
         const rows: ActionRowBuilder<ButtonBuilder>[] = [];
-        if (marketId) {
-          const fadeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`buy_${marketId}_${counterOutcome}_5`)
-              .setLabel(`Fade: Bet ${counterUpper} $5`)
-              .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId(`buy_${marketId}_${counterOutcome}_20`)
-              .setLabel(`Fade: Bet ${counterUpper} $20`)
-              .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success)
-          );
-          rows.push(fadeRow);
+
+        if (isCreate) {
+          embed = new EmbedBuilder()
+            .setTitle("🚀 New Prediction Market Created!")
+            .setColor(0x38bdf8)
+            .setDescription(
+              `**${userMention}** just launched a new prediction market:\n\n` +
+              `🎯 **"${marketTitle}"**\n\n` +
+              `📊 **Initial Odds:** YES 50% • 50% NO\n` +
+              `🏷️ **Category:** ${category || "Crypto"}\n\n` +
+              `*Trade on this market right now:*`
+            )
+            .setFooter({ text: "PantaChat • Non-Custodial Social Betting" });
+
+          if (marketId) {
+            rows.push(
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder().setCustomId(`buy_${marketId}_yes_5`).setLabel("Buy YES $5").setStyle(ButtonStyle.Success),
+                new ButtonBuilder().setCustomId(`buy_${marketId}_no_5`).setLabel("Buy NO $5").setStyle(ButtonStyle.Danger)
+              )
+            );
+          }
+        } else {
+          const outcomeUpper = String(outcome || "yes").toUpperCase();
+          const isYes = outcomeUpper === "YES";
+          const counterOutcome = isYes ? "no" : "yes";
+          const counterUpper = isYes ? "NO" : "YES";
+
+          embed = new EmbedBuilder()
+            .setTitle("🔥 Prediction Bet Placed in the Channel!")
+            .setColor(isYes ? 0x10b981 : 0xef4444)
+            .setDescription(
+              `**${userMention}** just locked in **$${Number(amount || 20).toFixed(2)} USDC** on **${outcomeUpper}** ${isYes ? "🟢" : "🔴"}!\n\n` +
+              `🎯 **"${marketTitle}"**\n\n` +
+              `*Think they're wrong? Take the opposite side right now:*`
+            )
+            .setFooter({ text: "PantaChat • Non-Custodial Social Betting" });
+
+          if (marketId) {
+            rows.push(
+              new ActionRowBuilder<ButtonBuilder>().addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`buy_${marketId}_${counterOutcome}_5`)
+                  .setLabel(`Fade: Bet ${counterUpper} $5`)
+                  .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success),
+                new ButtonBuilder()
+                  .setCustomId(`buy_${marketId}_${counterOutcome}_20`)
+                  .setLabel(`Fade: Bet ${counterUpper} $20`)
+                  .setStyle(isYes ? ButtonStyle.Danger : ButtonStyle.Success)
+              )
+            );
+          }
         }
 
-        const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setLabel("🌐 Open PantaChat")
-            .setStyle(ButtonStyle.Link)
-            .setURL(config.WEBAPP_URL)
-        );
-        rows.push(linkRow);
+        if (marketId) {
+          rows.push(
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setStyle(ButtonStyle.Link)
+                .setLabel("🌐 Open on PantaChat")
+                .setURL(`${config.WEBAPP_URL}/?market=${marketId}`)
+            )
+          );
+        }
 
         await (channel as any).send({
           embeds: [embed],
           components: rows,
         });
-        console.log(`✅ [Market Notifier] Discord brag flex posted to ${chatId}`);
       }
     } catch (err: any) {
-      console.warn(`⚠️ [Market Notifier] Discord brag flex warning:`, err.message);
+      console.warn(`⚠️ [Market Notifier] Discord share warning:`, err.message);
     }
   }
 }
+
 
 // =============================================================================
 // Faucet Request Notification Dispatcher

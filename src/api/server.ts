@@ -450,7 +450,7 @@ const braggedSessions = new Set<string>();
  */
 app.post("/api/sessions/:id/brag", async (req: Request, res: Response) => {
   const sessionId = String(req.params.id);
-  const { platform, chatId, userHandle, marketTitle, outcome, amount, marketId } = req.body;
+  const { platform, chatId, userHandle, marketTitle, outcome, amount, marketId, category, type } = req.body;
 
   if (!chatId) {
     return res.status(400).json({ error: "MISSING_CHAT_ID", message: "chatId is required to brag in chat." });
@@ -468,6 +468,8 @@ app.post("/api/sessions/:id/brag", async (req: Request, res: Response) => {
       userHandle: userHandle || "trader",
       marketTitle: marketTitle || "Prediction Market",
       marketId: marketId || null,
+      category: category || "Crypto",
+      type: type || (sessionId.startsWith("sess_create_") ? "create" : "buy"),
       outcome: outcome || "yes",
       amount: Number(amount || 20),
     });
