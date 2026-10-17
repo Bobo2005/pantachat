@@ -467,14 +467,24 @@ export function registerTelegramCommands(bot: Telegraf): void {
       text += `   Market ID: \`${t.marketId}\`\n\n`;
     });
 
-    return ctx.reply(text, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-        ],
-      },
-    });
+    try {
+      return await ctx.reply(text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+          ],
+        },
+      });
+    } catch {
+      return await ctx.reply(text.replace(/[*_`]/g, ""), {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+          ],
+        },
+      });
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -503,10 +513,16 @@ export function registerTelegramCommands(bot: Telegraf): void {
         },
       ]);
 
-      return ctx.reply(earnings.formattedMessage, {
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: buttons },
-      });
+      try {
+        return await ctx.reply(earnings.formattedMessage, {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: buttons },
+        });
+      } catch {
+        return await ctx.reply(earnings.formattedMessage.replace(/[*_`]/g, ""), {
+          reply_markup: { inline_keyboard: buttons },
+        });
+      }
     } catch (err: any) {
       console.error("[Telegram /earnings Error]:", err);
       return ctx.reply(`❌ Failed to retrieve creator earnings: ${err.message || "Unknown error"}`);
@@ -532,16 +548,21 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
     topTraders.forEach((entry, idx) => {
       const medal = medals[idx] || "•";
-      const userTag = entry.platformUserId?.startsWith("@")
+      const rawTag = entry.platformUserId?.startsWith("@")
         ? entry.platformUserId
         : `@${entry.platformUserId || "anonymous"}`;
+      const userTag = rawTag.replace(/([*_`\[\]])/g, "\\$1");
 
       text += `${medal} *${userTag}* — *${formatUsdc(entry.totalVolumeUsdc)}* (${entry.totalTrades} trades)\n`;
     });
 
     text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
 
-    return ctx.reply(text, { parse_mode: "Markdown" });
+    try {
+      return await ctx.reply(text, { parse_mode: "Markdown" });
+    } catch {
+      return await ctx.reply(text.replace(/[*_`]/g, ""));
+    }
   });
 
   // ---------------------------------------------------------------------------
