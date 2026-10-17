@@ -481,31 +481,36 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // /earnings
   // ---------------------------------------------------------------------------
   bot.command("earnings", async (ctx) => {
-    const userId = ctx.from?.username || String(ctx.from?.id || "");
-    const chatId = String(ctx.chat?.id || "");
+    try {
+      const userId = ctx.from?.username || String(ctx.from?.id || "");
+      const chatId = String(ctx.chat?.id || "");
 
-    const earnings = await getUserEarnings(userId, "telegram", chatId);
+      const earnings = await getUserEarnings(userId, "telegram", chatId);
 
-    const buttons: any[] = [];
-    if (earnings.claimableMarkets.length > 0) {
+      const buttons: any[] = [];
+      if (earnings.claimableMarkets.length > 0) {
+        buttons.push([
+          {
+            text: "⚡ Claim Creator Royalties",
+            url: earnings.claimableMarkets[0].claimUrl,
+          },
+        ]);
+      }
       buttons.push([
         {
-          text: "⚡ Claim Creator Royalties",
-          url: earnings.claimableMarkets[0].claimUrl,
+          text: "🌐 View Royalties Dashboard",
+          url: `${config.WEBAPP_URL}/positions`,
         },
       ]);
-    }
-    buttons.push([
-      {
-        text: "🌐 View Royalties Dashboard",
-        url: `${config.WEBAPP_URL}/positions`,
-      },
-    ]);
 
-    return ctx.reply(earnings.formattedMessage, {
-      parse_mode: "Markdown",
-      reply_markup: { inline_keyboard: buttons },
-    });
+      return ctx.reply(earnings.formattedMessage, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons },
+      });
+    } catch (err: any) {
+      console.error("[Telegram /earnings Error]:", err);
+      return ctx.reply(`❌ Failed to retrieve creator earnings: ${err.message || "Unknown error"}`);
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -683,5 +688,51 @@ export function registerTelegramCommands(bot: Telegraf): void {
         { parse_mode: "Markdown" }
       );
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Natural Language Conversational Handler
+  // Allows users in direct messages or replying to the bot to draft markets or ask questions
+  // ---------------------------------------------------------------------------
+  bot.on("text", async (ctx, next) => {
+    const text = (ctx.message as any)?.text?.trim() || "";
+    // Pass slash commands to their registered command handlers
+    if (text.startsWith("/")) {
+      return next();
+    }
+
+    const isPrivate = ctx.chat?.type === "private";
+    const isReplyToBot = (ctx.message as any)?.reply_to_message?.from?.id === ctx.botInfo?.id;
+
+    if (isPrivate || isReplyToBot) {
+      // If substantive text or question, draft a market from it
+      if (text.length >= 10 || text.includes("?") || /will|sol|btc|crypto|eth|win|hit|reach/i.test(text)) {
+        return handleMarketDraft(ctx);
+      }
+
+      // Friendly greeting & guide
+      return ctx.reply(
+        `👋 *Hi there! I'm PantaChat.*\n\n` +
+          `The conversational prediction market bot on Solana.\n\n` +
+          `• *Draft a market:* Send me any prediction question (e.g. _"Will Solana reach $300 by end of month?"_)\n` +
+          `• *Top markets:* Tap /trending to see active action\n` +
+          `• *Your portfolio:* Check /positions\n` +
+          `• *Royalties:* Check /earnings\n` +
+          `• *Test funds:* Request free SOL with /faucet <wallet>`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🔥 Trending Markets", callback_data: "refresh_trending" },
+                { text: "🌐 Open WebApp", url: config.WEBAPP_URL },
+              ],
+            ],
+          },
+        }
+      );
+    }
+
+    return next();
   });
 }

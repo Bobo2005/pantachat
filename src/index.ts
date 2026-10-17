@@ -65,8 +65,7 @@ async function bootstrap() {
   // 6. Launch Telegram Bot (Safe Long Polling)
   if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_BOT_TOKEN !== "dummy_telegram_token") {
     bot
-      .launch({ dropPendingUpdates: true })
-      .then(() => {
+      .launch({ dropPendingUpdates: false }, () => {
         console.log(`🤖 [Telegram] Bot active & listening as @${config.TELEGRAM_BOT_USERNAME}!`);
       })
       .catch((err) => {
