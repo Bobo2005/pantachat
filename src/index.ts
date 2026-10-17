@@ -62,23 +62,15 @@ async function bootstrap() {
     }
   });
 
-  // 6. Launch Telegram Bot (Safe Long Polling with Auto-Reconnect)
-  let isShuttingDown = false;
+  // 6. Launch Telegram Bot (Safe Long Polling)
   if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_BOT_TOKEN !== "dummy_telegram_token") {
-    const launchTelegramWithRetry = async () => {
-      try {
-        await bot.launch({ dropPendingUpdates: false }, () => {
-          console.log(`🤖 [Telegram] Bot active & listening as @${config.TELEGRAM_BOT_USERNAME}!`);
-        });
-      } catch (err: any) {
-        console.warn(`⚠️ [Telegram] Launch / Polling notice: ${err.message}`);
-        if (!isShuttingDown) {
-          console.log("🔄 [Telegram] Scheduling polling reconnect in 5s...");
-          setTimeout(launchTelegramWithRetry, 5000);
-        }
-      }
-    };
-    launchTelegramWithRetry();
+    bot
+      .launch({ dropPendingUpdates: false }, () => {
+        console.log(`🤖 [Telegram] Bot active & listening as @${config.TELEGRAM_BOT_USERNAME}!`);
+      })
+      .catch((err) => {
+        console.warn(`⚠️ [Telegram] Launch error (check token in .env):`, err.message);
+      });
   } else {
     console.log("ℹ️ [Telegram] Placeholder token detected. Skipping live polling launch.");
   }
@@ -113,17 +105,16 @@ async function bootstrap() {
 
   // Graceful Shutdown Coordinator
   const shutdown = async (signal: string) => {
-    isShuttingDown = true;
     console.log(`\n🛑 [Shutdown] Received ${signal}. Gracefully stopping PantaChat...`);
     stopResolution();
     stopGraduation();
     server.close();
     try {
       bot.stop(signal);
-    } catch {}
+    } catch { }
     try {
       discordClient.destroy();
-    } catch {}
+    } catch { }
     console.log("👋 [Shutdown] All processes closed. Goodbye!");
     process.exit(0);
   };

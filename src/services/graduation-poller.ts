@@ -189,10 +189,9 @@ export async function getUserEarnings(
     }
   }
 
-  const rawCreator = creatorPlatformId.startsWith("@")
+  const creatorTag = creatorPlatformId.startsWith("@")
     ? creatorPlatformId
     : `@${creatorPlatformId}`;
-  const creatorTag = rawCreator.replace(/([*_`\[\]])/g, "\\$1");
 
   let formattedMessage =
     `💰 *Creator Royalties & Earnings*\n` +
@@ -205,8 +204,7 @@ export async function getUserEarnings(
   if (claimableMarkets.length > 0) {
     formattedMessage += `⚡ *Unlocked Creator Royalties:*\n`;
     claimableMarkets.forEach((cm, i) => {
-      const cleanTitle = String(cm.title || "").replace(/([*_`\[\]])/g, "\\$1");
-      formattedMessage += `${i + 1}. "${cleanTitle}" (${formatUsdc(cm.volumeUsdc)} volume)\n`;
+      formattedMessage += `${i + 1}. "${cm.title}" (${formatUsdc(cm.volumeUsdc)} volume)\n`;
     });
     formattedMessage += `\nTap the button below to claim your royalties directly to your wallet.`;
   } else {

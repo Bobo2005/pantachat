@@ -238,8 +238,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
     if (!banterText) {
       return ctx.reply(
         `💡 *Reply-to-Market Guide:*\n\n` +
-          `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
-          `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
+        `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
+        `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
         { parse_mode: "Markdown" }
       );
     }
@@ -255,8 +255,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
       if (draft.isAmbiguous) {
         return ctx.reply(
           `🤔 *Ambiguity Guard Notice:*\n\n` +
-            `${draft.clarificationPrompt || "This statement is subjective or lacks clear criteria."}\n\n` +
-            `_Try rephrasing with specific dates, metrics, or official sources!_`,
+          `${draft.clarificationPrompt || "This statement is subjective or lacks clear criteria."}\n\n` +
+          `_Try rephrasing with specific dates, metrics, or official sources!_`,
           { parse_mode: "Markdown" }
         );
       }
@@ -349,7 +349,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
     const replyMsg = (ctx.message as any)?.reply_to_message;
     if (replyMsg && replyMsg.text) {
       const match = replyMsg.text.match(/Market ID:\s*`?([a-zA-Z0-9_\-]+)`?/i) ||
-                    replyMsg.text.match(/([a-zA-Z0-9_\-]{15,})/);
+        replyMsg.text.match(/([a-zA-Z0-9_\-]{15,})/);
       if (match) marketId = match[1];
     }
 
@@ -407,8 +407,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
       return ctx.reply(
         `🎯 *Ready to place bet:* ${amount} on *${outcome.toUpperCase()}*\n` +
-          `Market: \`${marketId}\`\n\n` +
-          `Tap below to review odds and sign non-custodially in Phantom:`,
+        `Market: \`${marketId}\`\n\n` +
+        `Tap below to review odds and sign non-custodially in Phantom:`,
         {
           parse_mode: "Markdown",
           reply_markup: {
@@ -448,7 +448,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
     if (userTrades.length === 0) {
       return ctx.reply(
         `📊 *Your Positions*\n\n` +
-          `You have no recorded bets yet! Tap YES or NO on any market card or use \`/market\` to start a new market.`,
+        `You have no recorded bets yet! Tap YES or NO on any market card or use \`/market\` to start a new market.`,
         {
           parse_mode: "Markdown",
           reply_markup: {
@@ -467,24 +467,14 @@ export function registerTelegramCommands(bot: Telegraf): void {
       text += `   Market ID: \`${t.marketId}\`\n\n`;
     });
 
-    try {
-      return await ctx.reply(text, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-          ],
-        },
-      });
-    } catch {
-      return await ctx.reply(text.replace(/[*_`]/g, ""), {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-          ],
-        },
-      });
-    }
+    return ctx.reply(text, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+        ],
+      },
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -513,16 +503,10 @@ export function registerTelegramCommands(bot: Telegraf): void {
         },
       ]);
 
-      try {
-        return await ctx.reply(earnings.formattedMessage, {
-          parse_mode: "Markdown",
-          reply_markup: { inline_keyboard: buttons },
-        });
-      } catch {
-        return await ctx.reply(earnings.formattedMessage.replace(/[*_`]/g, ""), {
-          reply_markup: { inline_keyboard: buttons },
-        });
-      }
+      return ctx.reply(earnings.formattedMessage, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: buttons },
+      });
     } catch (err: any) {
       console.error("[Telegram /earnings Error]:", err);
       return ctx.reply(`❌ Failed to retrieve creator earnings: ${err.message || "Unknown error"}`);
@@ -538,7 +522,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
     if (topTraders.length === 0) {
       return ctx.reply(
         `🏆 *PantaChat Community Leaderboard*\n\n` +
-          `No trades recorded yet! Be the first to place a prediction in this chat!`,
+        `No trades recorded yet! Be the first to place a prediction in this chat!`,
         { parse_mode: "Markdown" }
       );
     }
@@ -548,21 +532,16 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
     topTraders.forEach((entry, idx) => {
       const medal = medals[idx] || "•";
-      const rawTag = entry.platformUserId?.startsWith("@")
+      const userTag = entry.platformUserId?.startsWith("@")
         ? entry.platformUserId
         : `@${entry.platformUserId || "anonymous"}`;
-      const userTag = rawTag.replace(/([*_`\[\]])/g, "\\$1");
 
       text += `${medal} *${userTag}* — *${formatUsdc(entry.totalVolumeUsdc)}* (${entry.totalTrades} trades)\n`;
     });
 
     text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
 
-    try {
-      return await ctx.reply(text, { parse_mode: "Markdown" });
-    } catch {
-      return await ctx.reply(text.replace(/[*_`]/g, ""));
-    }
+    return ctx.reply(text, { parse_mode: "Markdown" });
   });
 
   // ---------------------------------------------------------------------------
@@ -575,7 +554,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       if (!topMarkets || topMarkets.length === 0) {
         return ctx.reply(
           `🔥 *TOP TRENDING MARKETS ON PANTA*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-            `No active markets found yet! Type \`/market <question>\` to draft the first market in this chat!`,
+          `No active markets found yet! Type \`/market <question>\` to draft the first market in this chat!`,
           { parse_mode: "Markdown" }
         );
       }
@@ -604,9 +583,9 @@ export function registerTelegramCommands(bot: Telegraf): void {
     if (!args) {
       return ctx.reply(
         `💧 *Devnet Faucet Guide*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `Need test SOL to try out PantaChat on Devnet?\n\n` +
-          `*Usage:* \`/faucet <your_solana_wallet_address>\`\n\n` +
-          `_Example:_ \`/faucet Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr\``,
+        `Need test SOL to try out PantaChat on Devnet?\n\n` +
+        `*Usage:* \`/faucet <your_solana_wallet_address>\`\n\n` +
+        `_Example:_ \`/faucet Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr\``,
         { parse_mode: "Markdown" }
       );
     }
@@ -635,10 +614,10 @@ export function registerTelegramCommands(bot: Telegraf): void {
           // Strictly rate limited: Cannot request until after a day!
           return ctx.reply(
             `⏳ *Daily Limit Reached*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `This wallet address has already claimed demo funds today.\n\n` +
-              `• *Wallet:* \`${recipientAddress}\`\n` +
-              `• *Next Claim Available:* *${apiResult.formattedWait || "after 24 hours"}*\n\n` +
-              `_Rate limit: Each wallet address can only request once every 24 hours._`,
+            `This wallet address has already claimed demo funds today.\n\n` +
+            `• *Wallet:* \`${recipientAddress}\`\n` +
+            `• *Next Claim Available:* *${apiResult.formattedWait || "after 24 hours"}*\n\n` +
+            `_Rate limit: Each wallet address can only request once every 24 hours._`,
             { parse_mode: "Markdown" }
           );
         }
@@ -671,7 +650,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       try {
         const lamports = await solanaConnection.getBalance(pubkey);
         currentBal = Number(lamports) / Number(LAMPORTS_PER_SOL);
-      } catch {}
+      } catch { }
 
       const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 
@@ -703,9 +682,9 @@ export function registerTelegramCommands(bot: Telegraf): void {
     } catch (err: any) {
       return ctx.reply(
         `⚠️ *Faucet Request Failed:*\n${err.message || "Invalid address or RPC faucet rate limit"}\n\n` +
-          `👉 *Instant No-GitHub Options:*\n` +
-          `1. Claim in our WebApp: [PantaChat Faucet](${config.WEBAPP_URL}/?faucet=true)\n` +
-          `2. Alternative Web Faucet: [solfaucet.com](https://solfaucet.com)`,
+        `👉 *Instant No-GitHub Options:*\n` +
+        `1. Claim in our WebApp: [PantaChat Faucet](${config.WEBAPP_URL}/?faucet=true)\n` +
+        `2. Alternative Web Faucet: [solfaucet.com](https://solfaucet.com)`,
         { parse_mode: "Markdown" }
       );
     }
@@ -734,12 +713,12 @@ export function registerTelegramCommands(bot: Telegraf): void {
       // Friendly greeting & guide
       return ctx.reply(
         `👋 *Hi there! I'm PantaChat.*\n\n` +
-          `The conversational prediction market bot on Solana.\n\n` +
-          `• *Draft a market:* Send me any prediction question (e.g. _"Will Solana reach $300 by end of month?"_)\n` +
-          `• *Top markets:* Tap /trending to see active action\n` +
-          `• *Your portfolio:* Check /positions\n` +
-          `• *Royalties:* Check /earnings\n` +
-          `• *Test funds:* Request free SOL with /faucet <wallet>`,
+        `The conversational prediction market bot on Solana.\n\n` +
+        `• *Draft a market:* Send me any prediction question (e.g. _"Will Solana reach $300 by end of month?"_)\n` +
+        `• *Top markets:* Tap /trending to see active action\n` +
+        `• *Your portfolio:* Check /positions\n` +
+        `• *Royalties:* Check /earnings\n` +
+        `• *Test funds:* Request free SOL with /faucet <wallet>`,
         {
           parse_mode: "Markdown",
           reply_markup: {
