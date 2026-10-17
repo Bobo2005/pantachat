@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const TELEGRAM_BOT_TOKEN =
-  process.env.TELEGRAM_BOT_TOKEN || "8957544318:AAF_X2mP2f22C70ml-98g5WvoN9LBsenMJE";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
 // Global in-memory set to guard against repeated brag clicks within lambda instance lifecycle
