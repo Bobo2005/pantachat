@@ -1,4 +1,4 @@
-import { eq, or, desc, sql } from "drizzle-orm";
+import { eq, or, desc, sql, and } from "drizzle-orm";
 import { db } from "./index.js";
 import {
   markets,
@@ -295,21 +295,40 @@ export interface LeaderboardEntry {
 
 /**
  * Returns top users aggregated by total trading volume in USDC.
+ * Can be scoped to a specific group/channel chatId or platform.
  */
-export async function getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
-  const results = await db
+export async function getLeaderboard(
+  limit = 10,
+  chatId?: string,
+  platform?: "telegram" | "discord"
+): Promise<LeaderboardEntry[]> {
+  const conditions = [];
+  if (chatId) {
+    conditions.push(eq(trades.chatId, chatId));
+  }
+  if (platform) {
+    conditions.push(eq(trades.platform, platform));
+  }
+
+  const baseQuery = db
     .select({
       platformUserId: trades.platformUserId,
       platform: trades.platform,
       totalVolumeUsdc: sql<number>`COALESCE(SUM(${trades.spendUsdc}), 0)`.as("totalVolumeUsdc"),
       totalTrades: sql<number>`COUNT(${trades.id})`.as("totalTrades"),
     })
-    .from(trades)
+    .from(trades);
+
+  const queryWithWhere = conditions.length > 0
+    ? (baseQuery as any).where(and(...conditions))
+    : baseQuery;
+
+  const results = await queryWithWhere
     .groupBy(trades.platformUserId, trades.platform)
     .orderBy(sql`totalVolumeUsdc DESC`)
     .limit(limit);
 
-  return results.map((row) => ({
+  return results.map((row: any) => ({
     platformUserId: row.platformUserId,
     platform: row.platform,
     totalVolumeUsdc: Number(row.totalVolumeUsdc) || 0,

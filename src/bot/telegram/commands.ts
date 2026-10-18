@@ -50,11 +50,11 @@ export async function sendSafeReply(
   try {
     return await ctx.reply(text, extra);
   } catch (err: any) {
-    // If Markdown parsing fails (e.g. 400 Bad Request can't parse entities), strip Markdown tokens
+    // If formatting fails, strip Markdown tokens and HTML tags and retry as clean plain text
     if (extra?.parse_mode) {
       const fallbackExtra = { ...extra };
       delete fallbackExtra.parse_mode;
-      const stripped = text.replace(/[*_`\[\]]/g, "");
+      const stripped = text.replace(/<[^>]+>/g, "").replace(/[*_`\[\]]/g, "");
       return await ctx.reply(stripped, fallbackExtra).catch(() => {});
     }
     throw err;
@@ -552,38 +552,47 @@ export function registerTelegramCommands(bot: Telegraf): void {
   });
 
   // ---------------------------------------------------------------------------
-  // /leaderboard
+  // ---------------------------------------------------------------------------
+  // /leaderboard (Scoped to current Group Chat if in a group, or global if in DM)
   // ---------------------------------------------------------------------------
   bot.command("leaderboard", async (ctx) => {
     ctx.sendChatAction("typing").catch(() => {});
     try {
-      const topTraders = await getLeaderboard(10);
+      const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
+      const chatId = isGroup ? String(ctx.chat.id) : undefined;
+      const chatTitle = (ctx.chat as any)?.title || "Community";
+
+      // Group-scoped leaderboard if in a group; global if in private DM
+      const topTraders = await getLeaderboard(10, chatId, "telegram");
 
       if (topTraders.length === 0) {
-        return sendSafeReply(
-          ctx,
-          `🏆 *PantaChat Community Leaderboard*\n\n` +
-          `No trades recorded yet! Be the first to place a prediction in this chat!`,
-          { parse_mode: "Markdown" }
-        );
+        const emptyMsg = isGroup
+          ? `🏆 <b>${chatTitle} Leaderboard</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `No bets recorded in this group yet!\n\n` +
+            `Tap YES or NO on any market card or type /market to place the first bet and claim #1 on this leaderboard!`
+          : `🏆 <b>PantaChat Community Leaderboard</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `No trades recorded yet! Be the first to place a prediction in this chat!`;
+
+        return sendSafeReply(ctx, emptyMsg, { parse_mode: "HTML" });
       }
 
       const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-      let text = `🏆 *Top Community Predictors (by Volume)*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      const headerTitle = isGroup ? `${chatTitle} Leaderboard` : "Top Community Predictors (by Volume)";
+      let text = `🏆 <b>${headerTitle}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
       topTraders.forEach((entry, idx) => {
         const medal = medals[idx] || "•";
         const rawTag = entry.platformUserId?.startsWith("@")
           ? entry.platformUserId
           : `@${entry.platformUserId || "anonymous"}`;
-        const userTag = rawTag.replace(/[_*`]/g, "\\$&");
+        const safeUserTag = rawTag.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-        text += `${medal} *${userTag}* — *${formatUsdc(entry.totalVolumeUsdc)}* (${entry.totalTrades} trades)\n`;
+        text += `${medal} <b>${safeUserTag}</b> — <b>${formatUsdc(entry.totalVolumeUsdc)}</b> (${entry.totalTrades} trade${entry.totalTrades === 1 ? "" : "s"})\n`;
       });
 
-      text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
+      text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ <b>Powered by Panta • Non-Custodial</b>`;
 
-      return sendSafeReply(ctx, text, { parse_mode: "Markdown" });
+      return sendSafeReply(ctx, text, { parse_mode: "HTML" });
     } catch (err: any) {
       console.error("[Telegram /leaderboard Error]:", err);
       return sendSafeReply(ctx, `⚠️ Failed to load leaderboard: ${err.message || "Unknown error"}`);

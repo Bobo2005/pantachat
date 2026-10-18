@@ -454,28 +454,31 @@ async function handleEarningsCommand(interaction: ChatInputCommandInteraction): 
 }
 
 /**
- * Handle /leaderboard (Public)
+ * Handle /leaderboard (Public - Scoped to Guild/Channel)
  */
 async function handleLeaderboardCommand(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply();
 
-  const topTraders = await getLeaderboard(10);
+  const targetChatId = interaction.guildId || interaction.channelId || undefined;
+  const serverName = interaction.guild?.name || "Server";
+
+  const topTraders = await getLeaderboard(10, targetChatId, "discord");
   if (topTraders.length === 0) {
     await interaction.editReply({
       content:
-        `🏆 **PantaChat Community Leaderboard**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `No trades recorded yet! Be the first to place an on-chain prediction!`,
+        `🏆 **${serverName} Leaderboard**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `No trades recorded in this server yet! Be the first to place an on-chain prediction!`,
     });
     return;
   }
 
   const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-  let text = `🏆 **Top Community Predictors (by Volume)**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  let text = `🏆 **${serverName} Top Predictors (by Volume)**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   topTraders.forEach((entry, idx) => {
     const medal = medals[idx] || "•";
     const userTag = entry.platformUserId || "anonymous";
-    text += `${medal} **${userTag}** — **${formatUsdc(entry.totalVolumeUsdc)}** (${entry.totalTrades} trades)\n`;
+    text += `${medal} **${userTag}** — **${formatUsdc(entry.totalVolumeUsdc)}** (${entry.totalTrades} trade${entry.totalTrades === 1 ? "" : "s"})\n`;
   });
 
   text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
