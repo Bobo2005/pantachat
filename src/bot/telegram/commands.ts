@@ -39,6 +39,29 @@ function extractBanterText(ctx: Context): string {
 }
 
 // =============================================================================
+// Helper: Safe Markdown Reply & Chat Action
+// =============================================================================
+
+export async function sendSafeReply(
+  ctx: Context,
+  text: string,
+  extra: any = { parse_mode: "Markdown" }
+) {
+  try {
+    return await ctx.reply(text, extra);
+  } catch (err: any) {
+    // If Markdown parsing fails (e.g. 400 Bad Request can't parse entities), strip Markdown tokens
+    if (extra?.parse_mode) {
+      const fallbackExtra = { ...extra };
+      delete fallbackExtra.parse_mode;
+      const stripped = text.replace(/[*_`\[\]]/g, "");
+      return await ctx.reply(stripped, fallbackExtra).catch(() => {});
+    }
+    throw err;
+  }
+}
+
+// =============================================================================
 // Register Core Telegram Commands
 // =============================================================================
 
@@ -52,6 +75,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // /start [payload] (Supports Group Onboarding via startgroup=...)
   // ---------------------------------------------------------------------------
   bot.command("start", async (ctx) => {
+    ctx.sendChatAction("typing").catch(() => {});
     const rawPayload = ((ctx as any).payload || "").trim();
     const payload = rawPayload.replace(/^startgroup=/, "");
 
@@ -233,10 +257,12 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // /market & /create (Reply-to-Create)
   // ---------------------------------------------------------------------------
   const handleMarketDraft = async (ctx: Context) => {
+    ctx.sendChatAction("typing").catch(() => {});
     const banterText = extractBanterText(ctx);
 
     if (!banterText) {
-      return ctx.reply(
+      return sendSafeReply(
+        ctx,
         `💡 *Reply-to-Market Guide:*\n\n` +
         `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
         `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
@@ -244,7 +270,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       );
     }
 
-    const waitMsg = await ctx.reply("🤖 *Analyzing banter with Claude Sonnet 5.5...*", {
+    const waitMsg = await sendSafeReply(ctx, "🤖 *Analyzing banter with Claude Sonnet 5.5...*", {
       parse_mode: "Markdown",
     });
 
@@ -253,7 +279,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
       // Ambiguity Guard Handling
       if (draft.isAmbiguous) {
-        return ctx.reply(
+        return sendSafeReply(
+          ctx,
           `🤔 *Ambiguity Guard Notice:*\n\n` +
           `${draft.clarificationPrompt || "This statement is subjective or lacks clear criteria."}\n\n` +
           `_Try rephrasing with specific dates, metrics, or official sources!_`,
@@ -290,7 +317,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
         `Tap below to sign the creation transaction in Phantom:`,
       ].join("\n");
 
-      return ctx.reply(previewText, {
+      return sendSafeReply(ctx, previewText, {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
@@ -314,7 +341,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
           `_You cannot launch the same market twice, but you can trade on it right now!_`,
         ].join("\n");
 
-        return ctx.reply(duplicateText, {
+        return sendSafeReply(ctx, duplicateText, {
           parse_mode: "Markdown",
           reply_markup: {
             inline_keyboard: [
@@ -329,7 +356,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       }
 
       console.error("[Telegram /market Error]:", err);
-      return ctx.reply(`❌ Failed to draft market: ${err.message || "Unknown error"}`);
+      return sendSafeReply(ctx, `❌ Failed to draft market: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -341,6 +368,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // Usage: /bet [marketId] <yes|no> <amount> or replying to a card: /bet yes 50
   // ---------------------------------------------------------------------------
   const handleCustomBetCommand = async (ctx: Context) => {
+    ctx.sendChatAction("typing").catch(() => {});
     const text = (ctx.message as any)?.text || "";
     const cleanArgs = text.replace(/^\/(bet|buy)(@\w+)?\s*/i, "").trim();
 
@@ -371,7 +399,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
     }
 
     if (!marketId) {
-      return ctx.reply(
+      return sendSafeReply(
+        ctx,
         [
           "🎯 *Custom Bet Command*",
           "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -387,7 +416,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
     }
 
     if (amount <= 0 || isNaN(amount)) {
-      return ctx.reply("⚠️ Please specify a valid amount greater than $0 (e.g. /bet " + marketId + " yes 25).");
+      return sendSafeReply(ctx, "⚠️ Please specify a valid amount greater than $0 (e.g. /bet " + marketId + " yes 25).");
     }
 
     try {
@@ -405,7 +434,8 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
       const signUrl = `${session.signUrl}&custom=true`;
 
-      return ctx.reply(
+      return sendSafeReply(
+        ctx,
         `🎯 *Ready to place bet:* ${amount} on *${outcome.toUpperCase()}*\n` +
         `Market: \`${marketId}\`\n\n` +
         `Tap below to review odds and sign non-custodially in Phantom:`,
@@ -430,7 +460,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
         }
       );
     } catch (err: any) {
-      return ctx.reply(`❌ Failed to create bet session: ${err.message || "Unknown error"}`);
+      return sendSafeReply(ctx, `❌ Failed to create bet session: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -442,45 +472,53 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // /positions
   // ---------------------------------------------------------------------------
   bot.command("positions", async (ctx) => {
-    const userId = ctx.from?.username || String(ctx.from?.id || "");
-    const userTrades = await getRecentTradesForUser(userId, 5);
+    ctx.sendChatAction("typing").catch(() => {});
+    try {
+      const userId = ctx.from?.username || String(ctx.from?.id || "");
+      const userTrades = await getRecentTradesForUser(userId, 5);
 
-    if (userTrades.length === 0) {
-      return ctx.reply(
-        `📊 *Your Positions*\n\n` +
-        `You have no recorded bets yet! Tap YES or NO on any market card or use \`/market\` to start a new market.`,
-        {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-            ],
-          },
-        }
-      );
+      if (userTrades.length === 0) {
+        return sendSafeReply(
+          ctx,
+          `📊 *Your Positions*\n\n` +
+          `You have no recorded bets yet! Tap YES or NO on any market card or use \`/market\` to start a new market.`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+              ],
+            },
+          }
+        );
+      }
+
+      let text = `📊 *Your Recent Positions:*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      userTrades.forEach((t, i) => {
+        const outcomeTag = t.outcome?.toUpperCase() === "YES" ? "🟢 YES" : "🔴 NO";
+        text += `${i + 1}. ${outcomeTag} • Spent: *${formatUsdc(t.spendUsdc || 0)}* • Shares: *${(t.shares || 0).toFixed(2)}*\n`;
+        text += `   Market ID: \`${t.marketId}\`\n\n`;
+      });
+
+      return sendSafeReply(ctx, text, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+          ],
+        },
+      });
+    } catch (err: any) {
+      console.error("[Telegram /positions Error]:", err);
+      return sendSafeReply(ctx, `❌ Failed to load positions: ${err.message || "Unknown error"}`);
     }
-
-    let text = `📊 *Your Recent Positions:*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    userTrades.forEach((t, i) => {
-      const outcomeTag = t.outcome?.toUpperCase() === "YES" ? "🟢 YES" : "🔴 NO";
-      text += `${i + 1}. ${outcomeTag} • Spent: *${formatUsdc(t.spendUsdc || 0)}* • Shares: *${(t.shares || 0).toFixed(2)}*\n`;
-      text += `   Market ID: \`${t.marketId}\`\n\n`;
-    });
-
-    return ctx.reply(text, {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-        ],
-      },
-    });
   });
 
   // ---------------------------------------------------------------------------
   // /earnings
   // ---------------------------------------------------------------------------
   bot.command("earnings", async (ctx) => {
+    ctx.sendChatAction("typing").catch(() => {});
     try {
       const userId = ctx.from?.username || String(ctx.from?.id || "");
       const chatId = String(ctx.chat?.id || "");
@@ -503,13 +541,13 @@ export function registerTelegramCommands(bot: Telegraf): void {
         },
       ]);
 
-      return ctx.reply(earnings.formattedMessage, {
+      return sendSafeReply(ctx, earnings.formattedMessage, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: buttons },
       });
     } catch (err: any) {
       console.error("[Telegram /earnings Error]:", err);
-      return ctx.reply(`❌ Failed to retrieve creator earnings: ${err.message || "Unknown error"}`);
+      return sendSafeReply(ctx, `❌ Failed to retrieve creator earnings: ${err.message || "Unknown error"}`);
     }
   });
 
@@ -517,42 +555,52 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // /leaderboard
   // ---------------------------------------------------------------------------
   bot.command("leaderboard", async (ctx) => {
-    const topTraders = await getLeaderboard(10);
+    ctx.sendChatAction("typing").catch(() => {});
+    try {
+      const topTraders = await getLeaderboard(10);
 
-    if (topTraders.length === 0) {
-      return ctx.reply(
-        `🏆 *PantaChat Community Leaderboard*\n\n` +
-        `No trades recorded yet! Be the first to place a prediction in this chat!`,
-        { parse_mode: "Markdown" }
-      );
+      if (topTraders.length === 0) {
+        return sendSafeReply(
+          ctx,
+          `🏆 *PantaChat Community Leaderboard*\n\n` +
+          `No trades recorded yet! Be the first to place a prediction in this chat!`,
+          { parse_mode: "Markdown" }
+        );
+      }
+
+      const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+      let text = `🏆 *Top Community Predictors (by Volume)*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+      topTraders.forEach((entry, idx) => {
+        const medal = medals[idx] || "•";
+        const rawTag = entry.platformUserId?.startsWith("@")
+          ? entry.platformUserId
+          : `@${entry.platformUserId || "anonymous"}`;
+        const userTag = rawTag.replace(/[_*`]/g, "\\$&");
+
+        text += `${medal} *${userTag}* — *${formatUsdc(entry.totalVolumeUsdc)}* (${entry.totalTrades} trades)\n`;
+      });
+
+      text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
+
+      return sendSafeReply(ctx, text, { parse_mode: "Markdown" });
+    } catch (err: any) {
+      console.error("[Telegram /leaderboard Error]:", err);
+      return sendSafeReply(ctx, `⚠️ Failed to load leaderboard: ${err.message || "Unknown error"}`);
     }
-
-    const medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-    let text = `🏆 *Top Community Predictors (by Volume)*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-
-    topTraders.forEach((entry, idx) => {
-      const medal = medals[idx] || "•";
-      const userTag = entry.platformUserId?.startsWith("@")
-        ? entry.platformUserId
-        : `@${entry.platformUserId || "anonymous"}`;
-
-      text += `${medal} *${userTag}* — *${formatUsdc(entry.totalVolumeUsdc)}* (${entry.totalTrades} trades)\n`;
-    });
-
-    text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Powered by Panta • Non-Custodial*`;
-
-    return ctx.reply(text, { parse_mode: "Markdown" });
   });
 
   // ---------------------------------------------------------------------------
   // /trending & /hot (Top 3 highest volume markets)
   // ---------------------------------------------------------------------------
   const handleTrendingCommand = async (ctx: Context) => {
+    ctx.sendChatAction("typing").catch(() => {});
     try {
       const topMarkets = await getTrendingMarkets(3);
 
       if (!topMarkets || topMarkets.length === 0) {
-        return ctx.reply(
+        return sendSafeReply(
+          ctx,
           `🔥 *TOP TRENDING MARKETS ON PANTA*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `No active markets found yet! Type \`/market <question>\` to draft the first market in this chat!`,
           { parse_mode: "Markdown" }
@@ -561,13 +609,13 @@ export function registerTelegramCommands(bot: Telegraf): void {
 
       const card = buildTelegramTrendingCard(topMarkets);
 
-      return ctx.reply(card.text, {
+      return sendSafeReply(ctx, card.text, {
         parse_mode: "Markdown",
         reply_markup: { inline_keyboard: card.buttons as any },
       });
     } catch (err: any) {
       console.error("[Telegram /trending error]:", err);
-      return ctx.reply(`⚠️ Failed to load trending markets: ${err.message || "Unknown error"}`);
+      return sendSafeReply(ctx, `⚠️ Failed to load trending markets: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -705,13 +753,15 @@ export function registerTelegramCommands(bot: Telegraf): void {
     const isReplyToBot = (ctx.message as any)?.reply_to_message?.from?.id === ctx.botInfo?.id;
 
     if (isPrivate || isReplyToBot) {
+      ctx.sendChatAction("typing").catch(() => {});
       // If substantive text or question, draft a market from it
       if (text.length >= 10 || text.includes("?") || /will|sol|btc|crypto|eth|win|hit|reach/i.test(text)) {
         return handleMarketDraft(ctx);
       }
 
       // Friendly greeting & guide
-      return ctx.reply(
+      return sendSafeReply(
+        ctx,
         `👋 *Hi there! I'm PantaChat.*\n\n` +
         `The conversational prediction market bot on Solana.\n\n` +
         `• *Draft a market:* Send me any prediction question (e.g. _"Will Solana reach $300 by end of month?"_)\n` +

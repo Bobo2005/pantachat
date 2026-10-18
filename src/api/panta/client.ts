@@ -101,7 +101,7 @@ export const pantaAxios: AxiosInstance = axios.create({
     "X-Api-Key": config.PANTA_API_KEY,
     "Content-Type": "application/json",
   },
-  timeout: 20000,
+  timeout: 5000,
 });
 
 // Response interceptor for standardized error handling
@@ -143,15 +143,17 @@ pantaAxios.interceptors.response.use(
 
 /**
  * Performs a rate-limited GET request to the Panta API.
+ * Priority 1 (highest) for interactive chat commands, 9 (lowest) for pollers.
  */
 export async function pantaGet<T = unknown>(
   url: string,
   requestConfig?: AxiosRequestConfig,
-  limiterType: LimiterType = "read"
+  limiterType: LimiterType = "read",
+  priority: number = 5
 ): Promise<T> {
   const limiter = getLimiter(limiterType);
   if (limiter) {
-    const res = await limiter.schedule(() => pantaAxios.get<T>(url, requestConfig));
+    const res = await limiter.schedule({ priority }, () => pantaAxios.get<T>(url, requestConfig));
     return res.data;
   }
   const res = await pantaAxios.get<T>(url, requestConfig);
@@ -165,11 +167,12 @@ export async function pantaPost<T = unknown>(
   url: string,
   data?: unknown,
   requestConfig?: AxiosRequestConfig,
-  limiterType: LimiterType = "build"
+  limiterType: LimiterType = "build",
+  priority: number = 5
 ): Promise<T> {
   const limiter = getLimiter(limiterType);
   if (limiter) {
-    const res = await limiter.schedule(() => pantaAxios.post<T>(url, data, requestConfig));
+    const res = await limiter.schedule({ priority }, () => pantaAxios.post<T>(url, data, requestConfig));
     return res.data;
   }
   const res = await pantaAxios.post<T>(url, data, requestConfig);

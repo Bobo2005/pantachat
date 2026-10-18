@@ -45,7 +45,7 @@ export async function checkMarketResolutionsOnce(): Promise<number> {
 
   for (const market of activeMarkets) {
     try {
-      const raw = await pantaGet<any>(`/markets/${market.id}/`, undefined, "read");
+      const raw = await pantaGet<any>(`/markets/${market.id}/`, undefined, "read", 9);
       const pantaData = raw?.market || raw?.data || raw;
 
       const isResolved =
@@ -150,8 +150,8 @@ export async function checkMarketResolutionsOnce(): Promise<number> {
           }
         }
       }
-    } catch (err) {
-      console.warn(`[Poller] Failed checking market ${market.id}:`, err);
+    } catch (err: any) {
+      console.warn(`[Resolution Poller] Market ${market.id} check skipped: ${err.message || err}`);
     }
   }
 

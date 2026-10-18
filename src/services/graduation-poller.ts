@@ -48,7 +48,7 @@ export async function checkGraduationsOnce(): Promise<number> {
 
   for (const market of primaryMarkets) {
     try {
-      const raw = await pantaGet<any>(`/markets/${market.id}/`, undefined, "read");
+      const raw = await pantaGet<any>(`/markets/${market.id}/`, undefined, "read", 9);
       const pantaData = raw?.market || raw?.data || raw;
 
       const isGraduated =
@@ -103,8 +103,8 @@ export async function checkGraduationsOnce(): Promise<number> {
           }
         }
       }
-    } catch (err) {
-      console.warn(`[Graduation] Failed checking market ${market.id}:`, err);
+    } catch (err: any) {
+      console.warn(`[Graduation Poller] Market ${market.id} check skipped: ${err.message || err}`);
     }
   }
 

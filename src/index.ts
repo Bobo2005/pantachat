@@ -62,18 +62,31 @@ async function bootstrap() {
     }
   });
 
-  // 6. Launch Telegram Bot (Safe Long Polling)
-  if (config.TELEGRAM_BOT_TOKEN && config.TELEGRAM_BOT_TOKEN !== "dummy_telegram_token") {
-    bot
-      .launch({ dropPendingUpdates: false }, () => {
+  // 6. Launch Telegram Bot (Resilient Long Polling with Auto-Reconnect)
+  let isTelegramShuttingDown = false;
+
+  async function launchTelegramPolling() {
+    if (!config.TELEGRAM_BOT_TOKEN || config.TELEGRAM_BOT_TOKEN === "dummy_telegram_token") {
+      console.log("ℹ️ [Telegram] Placeholder token detected. Skipping live polling launch.");
+      return;
+    }
+
+    while (!isTelegramShuttingDown) {
+      try {
         console.log(`🤖 [Telegram] Bot active & listening as @${config.TELEGRAM_BOT_USERNAME}!`);
-      })
-      .catch((err) => {
-        console.warn(`⚠️ [Telegram] Launch error (check token in .env):`, err.message);
-      });
-  } else {
-    console.log("ℹ️ [Telegram] Placeholder token detected. Skipping live polling launch.");
+        await bot.launch({ dropPendingUpdates: false });
+        break;
+      } catch (err: any) {
+        if (isTelegramShuttingDown) break;
+        console.warn(`⚠️ [Telegram] Polling interrupted (${err.message}). Auto-reconnecting in 3s...`);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
   }
+
+  launchTelegramPolling().catch((err) => {
+    console.error("❌ [Telegram] Fatal polling error:", err);
+  });
 
   // 7. Login Discord Bot Client
   if (config.DISCORD_BOT_TOKEN && config.DISCORD_BOT_TOKEN !== "dummy_discord_token") {
@@ -106,6 +119,7 @@ async function bootstrap() {
   // Graceful Shutdown Coordinator
   const shutdown = async (signal: string) => {
     console.log(`\n🛑 [Shutdown] Received ${signal}. Gracefully stopping PantaChat...`);
+    isTelegramShuttingDown = true;
     stopResolution();
     stopGraduation();
     server.close();

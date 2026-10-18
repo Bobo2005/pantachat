@@ -121,9 +121,11 @@ export async function getMarkets(
   return markets;
 }
 
+import { getMarketById as getDbMarketById, getTrendingMarkets as getDbTrendingMarkets } from "../../db/queries.js";
+
 /**
  * Fetches single market details including live spot prices, volume, phase, and cutoff time.
- * Cached in-memory for 60 seconds.
+ * Cached in-memory for 60 seconds. Checks local SQLite first for instantaneous response.
  */
 export async function getMarketById(marketId: string): Promise<PantaMarket> {
   const cacheKey = `market:${marketId}`;
@@ -132,7 +134,32 @@ export async function getMarketById(marketId: string): Promise<PantaMarket> {
     return cached;
   }
 
-  const raw = await pantaGet<any>(`/markets/${marketId}/`, undefined, "read");
+  // 1. Check local SQLite database for instant retrieval (0ms)
+  try {
+    const dbMarket = await getDbMarketById(marketId);
+    if (dbMarket) {
+      const pantaFormat: PantaMarket = {
+        id: dbMarket.id,
+        title: dbMarket.title,
+        description: dbMarket.description || undefined,
+        category: dbMarket.category || "Crypto",
+        phase: dbMarket.phase || "primary",
+        yesPrice: Number(dbMarket.yesPrice) || 0.5,
+        noPrice: Number(dbMarket.noPrice) || 0.5,
+        volumeUsdc: Number(dbMarket.volumeUsdc) || 0,
+        cutoffAt: dbMarket.cutoffAt ? new Date(dbMarket.cutoffAt * 1000).toISOString() : new Date().toISOString(),
+        resolvedOutcome: dbMarket.resolvedOutcome as any,
+        creatorWallet: dbMarket.creatorWallet || undefined,
+      };
+      setCached(cacheKey, pantaFormat, 30 * 1000);
+      return pantaFormat;
+    }
+  } catch {
+    // Continue to remote lookup
+  }
+
+  // 2. Interactive priority (1) remote lookup
+  const raw = await pantaGet<any>(`/markets/${marketId}/`, undefined, "read", 1);
   const market: PantaMarket = raw?.market || raw?.data || raw;
   setCached(cacheKey, market, 60 * 1000); // 60-second TTL
   return market;
@@ -234,14 +261,18 @@ export async function getMarketStats(marketId: string): Promise<MarketStats> {
   };
 }
 
-import { getTrendingMarkets as getDbTrendingMarkets } from "../../db/queries.js";
-
 /**
  * Fetches the top trending prediction markets sorted by trading volume.
+ * Protects UX by racing remote catalog with 1500ms timeout before falling back to local DB.
  */
 export async function getTrendingMarkets(limit: number = 3): Promise<PantaMarket[]> {
   try {
-    const all = await getMarkets({ limit: 20 });
+    const remotePromise = getMarkets({ limit: 20 });
+    const timeoutPromise = new Promise<PantaMarket[]>((_, reject) =>
+      setTimeout(() => reject(new Error("Remote catalog timeout (1500ms)")), 1500)
+    );
+
+    const all = await Promise.race([remotePromise, timeoutPromise]);
     const active = all.filter((m) => m.phase === "primary" || m.status === "active" || !m.phase);
     const sorted = active.sort((a, b) => (b.volumeUsdc || 0) - (a.volumeUsdc || 0));
     if (sorted.length >= limit) {
@@ -251,7 +282,7 @@ export async function getTrendingMarkets(limit: number = 3): Promise<PantaMarket
       return sorted;
     }
   } catch (err: any) {
-    console.warn("[getTrendingMarkets API Warning]:", err.message);
+    // Fail silently & fast to local DB
   }
 
   try {
