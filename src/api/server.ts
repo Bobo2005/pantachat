@@ -31,6 +31,19 @@ app.use(express.json());
 // =============================================================================
 
 /**
+ * GET / & GET /health
+ * Health check probe for 24/7 uptime monitors (Render, Koyeb, UptimeRobot).
+ */
+app.get(["/", "/health"], (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "ok",
+    service: "pantachat-runtime",
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
  * GET /api/sessions/:id
  * Retrieves pending signing session with market details, live quote, and base64 transaction.
  */
