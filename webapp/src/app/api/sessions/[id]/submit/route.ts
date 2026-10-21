@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, type LiveMarket } from "@/lib/markets";
+import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, isMarketExpired, type LiveMarket } from "@/lib/markets";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -60,6 +60,27 @@ export async function POST(
           m.id === marketId ||
           (m.title && title && m.title.toLowerCase().trim() === title.toLowerCase().trim())
       );
+
+      // Guard: Check if trading has closed due to cutoff timestamp or resolution
+      const effectiveCutoff = existingMarket?.cutoffAt || cutoffAt;
+      if (isMarketExpired(effectiveCutoff)) {
+        return NextResponse.json(
+          {
+            error: "MARKET_CLOSED",
+            message: "Trading has ended for this market. Betting is no longer permitted while awaiting outcome resolution.",
+          },
+          { status: 400 }
+        );
+      }
+      if (existingMarket?.phase === "resolved") {
+        return NextResponse.json(
+          {
+            error: "MARKET_RESOLVED",
+            message: "This market has already resolved. Betting is no longer permitted.",
+          },
+          { status: 400 }
+        );
+      }
 
       const targetTitle = existingMarket?.title || title || "Prediction Market";
       const targetCategory = existingMarket?.category || category || "Crypto";

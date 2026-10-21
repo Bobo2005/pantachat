@@ -13,7 +13,7 @@ import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
 import { getRecentTradesForUser } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { generateProgressBar } from "../common/card-builder.js";
 import { config } from "../../config.js";
 
@@ -34,6 +34,24 @@ async function handleBuyPresetButton(interaction: ButtonInteraction, match: RegE
   const chatId = interaction.channelId;
 
   try {
+    const market = await getMarketById(marketId).catch(() => null);
+    if (market) {
+      if (market.phase === "resolved" || market.resolvedOutcome) {
+        await interaction.reply({
+          content: "⚪ **This market is resolved.** Payouts can be claimed in `/positions`.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      if (isCutoffExpired(market.cutoffAt)) {
+        await interaction.reply({
+          content: "❌ **Trading has ended for this market.** Betting is no longer permitted while awaiting outcome resolution.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+
     const session = await createTradeSession({
       platformUserId,
       platform: "discord",
@@ -159,6 +177,24 @@ async function handleCustomBetButton(interaction: ButtonInteraction, marketId: s
   const chatId = interaction.channelId;
 
   try {
+    const market = await getMarketById(marketId).catch(() => null);
+    if (market) {
+      if (market.phase === "resolved" || market.resolvedOutcome) {
+        await interaction.reply({
+          content: "⚪ **This market is resolved.** Payouts can be claimed in `/positions`.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      if (isCutoffExpired(market.cutoffAt)) {
+        await interaction.reply({
+          content: "❌ **Trading has ended for this market.** Betting is no longer permitted while awaiting outcome resolution.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+
     const session = await createTradeSession({
       platformUserId,
       platform: "discord",
@@ -407,6 +443,16 @@ export function registerDiscordInteractions(client: Client): void {
       const detailsMatch = customId.match(/^details_(.+)$/);
       if (detailsMatch) {
         await handleDetailsButton(interaction, detailsMatch[1]);
+        return;
+      }
+
+      // Trading Closed Button
+      const closedMatch = customId.match(/^closed_(.+)$/);
+      if (closedMatch) {
+        await interaction.reply({
+          content: "⏳ **Trading has ended for this market.** It is awaiting outcome resolution.",
+          flags: MessageFlags.Ephemeral,
+        });
         return;
       }
 

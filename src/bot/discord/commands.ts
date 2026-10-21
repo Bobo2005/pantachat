@@ -25,7 +25,7 @@ import { registerDiscordInteractions } from "./interactions.js";
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { generateProgressBar } from "../common/card-builder.js";
 
 // =============================================================================
@@ -236,16 +236,28 @@ async function processBanterDraft(
         `*You cannot launch the same market twice, but you can trade on it right now!*`,
       ].join("\n");
 
-      const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`buy_${m.id}_yes_20`)
-          .setLabel(`Trade YES ($${m.yesPrice.toFixed(2)})`)
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId(`buy_${m.id}_no_20`)
-          .setLabel(`Trade NO ($${m.noPrice.toFixed(2)})`)
-          .setStyle(ButtonStyle.Danger)
-      );
+      const isDuplicateClosed = isCutoffExpired(m.cutoffAt) || m.phase === "resolved";
+      const row = new ActionRowBuilder<ButtonBuilder>();
+      if (isDuplicateClosed) {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`closed_${m.id}`)
+            .setLabel("⏳ Trading Closed (Awaiting Resolution)")
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true)
+        );
+      } else {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`buy_${m.id}_yes_20`)
+            .setLabel(`Trade YES ($${m.yesPrice.toFixed(2)})`)
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`buy_${m.id}_no_20`)
+            .setLabel(`Trade NO ($${m.noPrice.toFixed(2)})`)
+            .setStyle(ButtonStyle.Danger)
+        );
+      }
 
       await interaction.editReply({
         content: duplicateMsg,
@@ -276,6 +288,24 @@ async function handleBetCommand(interaction: ChatInputCommandInteraction): Promi
   const chatId = interaction.channelId;
 
   try {
+    const market = await getMarketById(marketId).catch(() => null);
+    if (market) {
+      if (market.phase === "resolved" || market.resolvedOutcome) {
+        await interaction.reply({
+          content: "⚪ **This market is resolved.** Payouts can be claimed in `/positions`.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+      if (isCutoffExpired(market.cutoffAt)) {
+        await interaction.reply({
+          content: "❌ **Trading has ended for this market.** Betting is no longer permitted while awaiting outcome resolution.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+    }
+
     const session = await createTradeSession({
       platformUserId,
       platform: "discord",

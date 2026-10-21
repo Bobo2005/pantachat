@@ -4,7 +4,7 @@ import { createTradeSession } from "../../api/panta/trading.js";
 import { getSessionById } from "../../db/queries.js";
 import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { config } from "../../config.js";
 
 // =============================================================================
@@ -46,7 +46,7 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
     try {
       const market = await getMarketById(marketId);
       const newCardText = buildMarketCardText(market);
-      const buttons = getPresetBuyButtons(market.id, market.phase);
+      const buttons = getPresetBuyButtons(market.id, market.phase, market.cutoffAt);
 
       // Memory.md invariant: Visual odds bar lives in message text, so call editMessageText
       await ctx.editMessageText(newCardText, {
@@ -74,6 +74,17 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
     const chatId = ctx.chat?.id ? String(ctx.chat.id) : "inline";
 
     try {
+      // Guard: Check if market is expired or resolved
+      const market = await getMarketById(marketId).catch(() => null);
+      if (market) {
+        if (market.phase === "resolved" || market.resolvedOutcome) {
+          return ctx.answerCbQuery("⚪ This market is resolved. Payouts can be claimed in /positions.", { show_alert: true });
+        }
+        if (isCutoffExpired(market.cutoffAt)) {
+          return ctx.answerCbQuery("❌ Trading has ended for this market.", { show_alert: true });
+        }
+      }
+
       // Create ephemeral trade session in DB
       const session = await createTradeSession({
         platformUserId,
@@ -142,6 +153,17 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
     const chatId = String(ctx.chat?.id || "");
 
     try {
+      // Guard: Check if market is expired or resolved
+      const market = await getMarketById(marketId).catch(() => null);
+      if (market) {
+        if (market.phase === "resolved" || market.resolvedOutcome) {
+          return ctx.answerCbQuery("⚪ This market is resolved. Payouts can be claimed in /positions.", { show_alert: true });
+        }
+        if (isCutoffExpired(market.cutoffAt)) {
+          return ctx.answerCbQuery("❌ Trading has ended for this market.", { show_alert: true });
+        }
+      }
+
       // Create session with default $10 custom starter
       const session = await createTradeSession({
         platformUserId,
@@ -174,6 +196,13 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
     } catch (err: any) {
       await ctx.answerCbQuery("❌ Failed to open custom order modal.").catch(() => {});
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3b. Trading Closed Button Tap
+  // ---------------------------------------------------------------------------
+  bot.action(/^closed_(.+)$/, async (ctx) => {
+    await ctx.answerCbQuery("⏳ Trading has ended for this market. It is awaiting outcome resolution.", { show_alert: true }).catch(() => {});
   });
 
   // ---------------------------------------------------------------------------

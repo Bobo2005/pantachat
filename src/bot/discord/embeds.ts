@@ -5,7 +5,7 @@ import {
   ButtonStyle,
 } from "discord.js";
 import { type MarketData, generateProgressBar } from "../common/card-builder.js";
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { config } from "../../config.js";
 
 // =============================================================================
@@ -18,9 +18,10 @@ import { config } from "../../config.js";
  * - Purple (#9945FF): Graduated Secondary Market
  * - Grey/Slate (#64748B): Resolved
  */
-export function getMarketEmbedColor(phase?: string | null): number {
+export function getMarketEmbedColor(phase?: string | null, isExpired?: boolean): number {
   if (phase === "secondary") return 0x9945FF;
   if (phase === "resolved") return 0x64748B;
+  if (isExpired) return 0xF59E0B; // Amber for expired / awaiting resolution
   return 0x10B981;
 }
 
@@ -50,7 +51,8 @@ export interface DiscordMarketCardResult {
 
 export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardResult {
   const icon = getCategoryIcon(market.category);
-  const color = getMarketEmbedColor(market.phase);
+  const isExpired = !market.resolvedOutcome && market.phase !== "resolved" && isCutoffExpired(market.cutoffAt);
+  const color = getMarketEmbedColor(market.phase, isExpired);
 
   const yesPrice = Number(market.yesPrice) || 0.5;
   const noPrice = Number(market.noPrice) || 0.5;
@@ -72,6 +74,8 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
     statusBadge = "🟣 Graduated Secondary";
   } else if (market.phase === "resolved") {
     statusBadge = `⚪ Resolved (${(market.resolvedOutcome || "FINAL").toUpperCase()})`;
+  } else if (isExpired) {
+    statusBadge = "⏳ Trading Closed (Awaiting Resolution)";
   }
 
   // Relative Timestamp formatting
@@ -128,7 +132,7 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
   // Build Action Rows
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
 
-  // Row 1: Preset Buy Buttons
+  // Row 1: Preset Buy Buttons or Closed Status
   if (market.phase === "secondary") {
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
@@ -137,7 +141,36 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
         .setURL(`${config.WEBAPP_URL}/market/${market.id}`)
     );
     components.push(row1);
-  } else if (market.phase !== "resolved") {
+  } else if (market.phase === "resolved") {
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel("💰 Claim Winnings")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`${config.WEBAPP_URL}/positions`),
+      new ButtonBuilder()
+        .setCustomId(`refresh_${market.id}`)
+        .setLabel("🔄 Refresh")
+        .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(row1);
+  } else if (isExpired) {
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`closed_${market.id}`)
+        .setLabel("⏳ Trading Closed")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId(`details_${market.id}`)
+        .setLabel("📊 Details")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`refresh_${market.id}`)
+        .setLabel("🔄 Refresh")
+        .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(row1);
+  } else {
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`buy_${market.id}_yes_5`)
@@ -159,30 +192,32 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
     components.push(row1);
   }
 
-  // Row 2: In-place Refresh, Details, Custom Bet, Share & WebApp
-  const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`refresh_${market.id}`)
-      .setLabel("🔄 Refresh")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`details_${market.id}`)
-      .setLabel("📊 Details")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`custom_${market.id}`)
-      .setLabel("⚙️ Custom Bet")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`share_mkt_btn_${market.id}`)
-      .setLabel("🔗 Share")
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setLabel("🌐 WebApp")
-      .setStyle(ButtonStyle.Link)
-      .setURL(`${config.WEBAPP_URL}/?market=${market.id}`)
-  );
-  components.push(row2);
+  // Row 2: In-place Refresh, Details, Custom Bet, Share & WebApp (only for active live curve)
+  if (!isExpired && market.phase !== "resolved") {
+    const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`refresh_${market.id}`)
+        .setLabel("🔄 Refresh")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`details_${market.id}`)
+        .setLabel("📊 Details")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`custom_${market.id}`)
+        .setLabel("⚙️ Custom Bet")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`share_mkt_btn_${market.id}`)
+        .setLabel("🔗 Share")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setLabel("🌐 WebApp")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`${config.WEBAPP_URL}/?market=${market.id}`)
+    );
+    components.push(row2);
+  }
 
   return { embed, components };
 }
@@ -220,16 +255,26 @@ export function buildDiscordTrendingCard(topMarkets: MarketData[]): {
   const row = new ActionRowBuilder<ButtonBuilder>();
   const topMarket = topMarkets[0];
   if (topMarket) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`buy_${topMarket.id}_yes_5`)
-        .setLabel("🟢 Buy YES $5 (#1)")
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`buy_${topMarket.id}_no_5`)
-        .setLabel("🔴 Buy NO $5 (#1)")
-        .setStyle(ButtonStyle.Danger)
-    );
+    if (isCutoffExpired(topMarket.cutoffAt)) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`closed_${topMarket.id}`)
+          .setLabel("⏳ Trading Closed (#1)")
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true)
+      );
+    } else {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`buy_${topMarket.id}_yes_5`)
+          .setLabel("🟢 Buy YES $5 (#1)")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`buy_${topMarket.id}_no_5`)
+          .setLabel("🔴 Buy NO $5 (#1)")
+          .setStyle(ButtonStyle.Danger)
+      );
+    }
   }
 
   row.addComponents(

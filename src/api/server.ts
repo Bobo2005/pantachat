@@ -16,6 +16,7 @@ import {
   broadcastBragNotification,
 } from "../services/market-notifier.js";
 import { pantaGet } from "./panta/client.js";
+import { isCutoffExpired } from "../utils/formatters.js";
 
 // =============================================================================
 // Express App Initialization
@@ -333,6 +334,22 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
 
     // 1. Post-Confirmation for Buy Orders
     if (session.type === "buy" && session.marketId) {
+      const market = await getMarketById(session.marketId).catch(() => null);
+      if (market) {
+        if (market.phase === "resolved" || market.resolvedOutcome) {
+          return res.status(400).json({
+            error: "MARKET_RESOLVED",
+            message: "This market has already resolved. Betting is no longer permitted.",
+          });
+        }
+        if (isCutoffExpired(market.cutoffAt)) {
+          return res.status(400).json({
+            error: "MARKET_CLOSED",
+            message: "Trading has ended for this market. Betting is no longer permitted while awaiting outcome resolution.",
+          });
+        }
+      }
+
       // Attribution Reporting (POST /trades/)
       await reportTradeToPanta({
         signature: finalSig,

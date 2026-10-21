@@ -128,6 +128,22 @@ export function normalizeMarketTitle(title: string): string {
 }
 
 /**
+ * Determines whether a market trading cutoff timestamp has passed (expired).
+ */
+export function isMarketExpired(cutoffAt?: string | number | null): boolean {
+  if (!cutoffAt) return false;
+  const cutoffMs =
+    typeof cutoffAt === "number"
+      ? cutoffAt < 10000000000
+        ? cutoffAt * 1000
+        : cutoffAt
+      : new Date(cutoffAt).getTime();
+  if (isNaN(cutoffMs)) return false;
+  return cutoffMs <= Date.now();
+}
+
+
+/**
  * Searches Supabase and in-memory catalog for an existing market with matching normalized title.
  */
 export async function findDuplicateMarketAsync(title: string): Promise<LiveMarket | null> {

@@ -51,3 +51,20 @@ export function formatPercentage(prob: number): string {
 
 // Memory.md invariant convenience aliases
 export const parseUsdc = toBaseUnits;
+
+/**
+ * Determines whether a market trading cutoff timestamp has passed (expired).
+ * Supports ISO date strings, unix timestamps in seconds, and unix timestamps in milliseconds.
+ */
+export function isCutoffExpired(cutoffAt?: string | number | null): boolean {
+  if (!cutoffAt) return false;
+  const cutoffMs =
+    typeof cutoffAt === "number"
+      ? cutoffAt < 10000000000
+        ? cutoffAt * 1000
+        : cutoffAt
+      : new Date(cutoffAt).getTime();
+  if (isNaN(cutoffMs)) return false;
+  return cutoffMs <= Date.now();
+}
+

@@ -19,6 +19,7 @@ import {
   openInPhantomApp,
   openInSolflareApp,
 } from "@/utils/mobileWallet";
+import { isMarketExpired } from "@/lib/markets";
 
 // =============================================================================
 // Helper: Native Base64 / Uint8Array Converters
@@ -379,6 +380,20 @@ function SigningFlow() {
           return;
         }
 
+        // Check if market has closed for trading before presenting quote
+        const isTradeSession = (data.session?.type === "buy") || !isCreateSession;
+        const targetCutoff = data.market?.cutoffAt || data.market?.cutoff_at || data.payload?.cutoffAt;
+        if (isTradeSession && isMarketExpired(targetCutoff)) {
+          setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
+          setState("error");
+          return;
+        }
+        if (isTradeSession && (data.market?.phase === "resolved" || data.market?.resolvedOutcome)) {
+          setErrorMessage("This market has already resolved. Betting is no longer permitted.");
+          setState("error");
+          return;
+        }
+
         setSession({
           id: data.session?.id || sessionId,
           type: data.session?.type || (isCreateSession ? "create" : "buy"),
@@ -438,6 +453,12 @@ function SigningFlow() {
           }
         } catch (mErr) {
           console.warn("[Sign Page] Could not fetch market list for fallback quote:", mErr);
+        }
+
+        if (!isCreateSession && matchedMarket && isMarketExpired(matchedMarket.cutoffAt)) {
+          setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
+          setState("error");
+          return;
         }
 
         const resolvedTitle = matchedMarket?.title || queryTitle || "Prediction Market";

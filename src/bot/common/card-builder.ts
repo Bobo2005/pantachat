@@ -1,4 +1,4 @@
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { config } from "../../config.js";
 
 // =============================================================================
@@ -101,11 +101,14 @@ export function buildMarketCardText(market: MarketData): string {
   const noGain = noPrice > 0 ? Math.max(0, Math.round(((1 / noPrice) - 1) * 100)) : 0;
 
   // Status Badge
+  const isExpired = !market.resolvedOutcome && market.phase !== "resolved" && isCutoffExpired(market.cutoffAt);
   let statusBadge = "🟢 Live Primary Curve";
   if (market.phase === "secondary") {
     statusBadge = "🟣 Graduated Secondary";
   } else if (market.phase === "resolved") {
     statusBadge = `⚪ Resolved (${(market.resolvedOutcome || "FINAL").toUpperCase()})`;
+  } else if (isExpired) {
+    statusBadge = "⏳ Trading Closed (Awaiting Resolution)";
   }
 
   const volumeStr = formatUsdc(market.volumeUsdc || 0);
@@ -154,7 +157,8 @@ export function buildMarketCardText(market: MarketData): string {
  */
 export function getPresetBuyButtons(
   marketId: string,
-  phase: "primary" | "secondary" | "resolved" | string = "primary"
+  phase: "primary" | "secondary" | "resolved" | string = "primary",
+  cutoffAt?: string | number | null
 ): InlineButton[][] {
   // If graduated to secondary, return link out (memory.md invariant)
   if (phase === "secondary") {
@@ -184,6 +188,19 @@ export function getPresetBuyButtons(
       [
         { text: "🔄 Refresh Card", callback_data: `refresh_${marketId}` },
         { text: "📊 Details", callback_data: `details_${marketId}` },
+      ],
+    ];
+  }
+
+  // If trading cutoff has passed, betting is closed
+  if (isCutoffExpired(cutoffAt)) {
+    return [
+      [
+        { text: "⏳ Trading Closed", callback_data: `closed_${marketId}` },
+      ],
+      [
+        { text: "📊 Market Details", callback_data: `details_${marketId}` },
+        { text: "🔄 Refresh Status", callback_data: `refresh_${marketId}` },
       ],
     ];
   }
@@ -237,10 +254,16 @@ export function buildTelegramTrendingCard(topMarkets: MarketData[]): {
       `   📊 ${volumeDisplay} USDC • YES ${yesPct}% ${progressBar} ${noPct}% NO\n`
     );
 
-    buttons.push([
-      { text: `🟢 Buy YES $5 (#${idx + 1})`, callback_data: `buy_${m.id}_yes_5` },
-      { text: `🔴 Buy NO $5 (#${idx + 1})`, callback_data: `buy_${m.id}_no_5` },
-    ]);
+    if (isCutoffExpired(m.cutoffAt)) {
+      buttons.push([
+        { text: `⏳ Trading Closed (#${idx + 1})`, callback_data: `closed_${m.id}` },
+      ]);
+    } else {
+      buttons.push([
+        { text: `🟢 Buy YES $5 (#${idx + 1})`, callback_data: `buy_${m.id}_yes_5` },
+        { text: `🔴 Buy NO $5 (#${idx + 1})`, callback_data: `buy_${m.id}_no_5` },
+      ]);
+    }
   });
 
   lines.push(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);

@@ -8,7 +8,7 @@ import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTel
 import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
-import { formatUsdc } from "../../utils/formatters.js";
+import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
 import { config } from "../../config.js";
 import { handleInlineQuery } from "./inline.js";
 
@@ -187,19 +187,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
             `⚡ *Trade non-custodially on Solana Devnet*`,
           ].join("\n");
 
-          const buttons = [
-            [
-              { text: "🟢 Buy YES $5", callback_data: `buy_${market.id}_yes_5` },
-              { text: "🔴 Buy NO $5", callback_data: `buy_${market.id}_no_5` },
-            ],
-            [
-              {
-                text: "🚀 Open in Mini App",
-                url: `https://t.me/${config.TELEGRAM_BOT_USERNAME}?startapp=mkt_${market.id}`,
-              },
-              { text: "🔄 Refresh Odds", callback_data: `refresh_${market.id}` },
-            ],
-          ];
+          const buttons = getPresetBuyButtons(market.id, market.phase, market.cutoffAt);
 
           return ctx.reply(cardText, {
             parse_mode: "Markdown",
@@ -341,16 +329,24 @@ export function registerTelegramCommands(bot: Telegraf): void {
           `_You cannot launch the same market twice, but you can trade on it right now!_`,
         ].join("\n");
 
-        return sendSafeReply(ctx, duplicateText, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: [
+        const isDuplicateClosed = isCutoffExpired(m.cutoffAt) || m.phase === "resolved";
+        const duplicateButtons = isDuplicateClosed
+          ? [
+              [{ text: "⏳ Trading Closed (Awaiting Resolution)", callback_data: `closed_${m.id}` }],
+              [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
+            ]
+          : [
               [
                 { text: `Trade YES ($${m.yesPrice.toFixed(2)})`, callback_data: `buy_${m.id}_yes_20` },
                 { text: `Trade NO ($${m.noPrice.toFixed(2)})`, callback_data: `buy_${m.id}_no_20` },
               ],
               [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
-            ],
+            ];
+
+        return sendSafeReply(ctx, duplicateText, {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: duplicateButtons,
           },
         });
       }
@@ -420,6 +416,16 @@ export function registerTelegramCommands(bot: Telegraf): void {
     }
 
     try {
+      const market = await getMarketById(marketId).catch(() => null);
+      if (market) {
+        if (market.phase === "resolved" || market.resolvedOutcome) {
+          return sendSafeReply(ctx, "⚪ *This market has already resolved.* Payouts can be claimed in /positions.", { parse_mode: "Markdown" });
+        }
+        if (isCutoffExpired(market.cutoffAt)) {
+          return sendSafeReply(ctx, "❌ *Trading has ended for this market.* Betting is no longer permitted while awaiting outcome resolution.", { parse_mode: "Markdown" });
+        }
+      }
+
       const platformUserId = ctx.from?.username || String(ctx.from?.id || "unknown");
       const chatId = String(ctx.chat?.id || "");
 

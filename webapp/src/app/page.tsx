@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import { getAllLiveMarkets } from "@/lib/markets";
+import { getAllLiveMarkets, isMarketExpired } from "@/lib/markets";
 import { useTelegram } from "@/components/TelegramProvider";
 import { shareMarket } from "@/utils/share";
 
@@ -25,6 +25,7 @@ export interface MarketItem {
   creator: string;
   phase: "primary" | "secondary" | "resolved";
   resolvedOutcome?: "yes" | "no";
+  cutoffAt?: string;
   description?: string;
 }
 
@@ -51,6 +52,7 @@ function formatMarketEntry(m: any): MarketItem {
     creator: m.creator || "PantaChat",
     phase: (m.phase as any) || "primary",
     resolvedOutcome: m.resolvedOutcome || m.resolved_outcome,
+    cutoffAt: m.cutoffAt || m.cutoff_at,
     description: m.description,
   };
 }
@@ -184,6 +186,10 @@ function MarketExplorerContent() {
 
   const handleProceedToSign = () => {
     if (!activeModalMarket) return;
+    if (isMarketExpired(activeModalMarket.cutoffAt)) {
+      setToastMessage("⚠️ Trading has ended for this market. Betting is closed.");
+      return;
+    }
     const finalAmount = parseFloat(customInput) || spendAmount || 0;
     if (finalAmount <= 0) {
       alert("Please enter a valid amount greater than $0.");
@@ -267,9 +273,15 @@ function MarketExplorerContent() {
                   <span>⚡</span> {heroMarket.category} • FEATURED
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                    {heroMarket.phase === "secondary" ? "Graduated Secondary" : "Primary Curve"}
-                  </span>
+                  {isMarketExpired(heroMarket.cutoffAt) ? (
+                    <span className="font-mono text-[11px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30 font-bold">
+                      ⏳ Trading Ended (Awaiting Resolution)
+                    </span>
+                  ) : (
+                    <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      {heroMarket.phase === "secondary" ? "Graduated Secondary" : "Primary Curve"}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -374,38 +386,50 @@ function MarketExplorerContent() {
                 </div>
               </div>
 
-              {/* Direct Quick Bet Buttons */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <button
-                  onClick={() => openBuyModal(heroMarket, "yes")}
-                  className="flex items-center justify-between p-3 rounded-md bg-[#0f1520] hover:bg-[#141c2b] border border-[#1e2638] hover:border-[#38bdf8]/40 transition cursor-pointer group"
-                >
+              {/* Direct Quick Bet Buttons or Trading Closed Notice */}
+              {isMarketExpired(heroMarket.cutoffAt) ? (
+                <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs font-mono text-amber-300">
                   <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-[#38bdf8]/20 text-[#38bdf8] flex items-center justify-center text-[10px] group-hover:scale-110 transition">
-                      ✓
-                    </div>
-                    <span className="text-xs font-semibold text-white">Buy YES</span>
+                    <span>⏳</span>
+                    <span>Trading has closed for this market. Awaiting outcome resolution.</span>
                   </div>
-                  <span className="font-mono text-xs font-bold text-[#38bdf8]">
-                    {heroMarket.yesPercent}% • ${(heroMarket.yesPrice).toFixed(2)}
+                  <span className="font-bold text-amber-400 bg-amber-500/20 px-2.5 py-1 rounded border border-amber-500/30">
+                    Trading Ended
                   </span>
-                </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <button
+                    onClick={() => openBuyModal(heroMarket, "yes")}
+                    className="flex items-center justify-between p-3 rounded-md bg-[#0f1520] hover:bg-[#141c2b] border border-[#1e2638] hover:border-[#38bdf8]/40 transition cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-[#38bdf8]/20 text-[#38bdf8] flex items-center justify-center text-[10px] group-hover:scale-110 transition">
+                        ✓
+                      </div>
+                      <span className="text-xs font-semibold text-white">Buy YES</span>
+                    </div>
+                    <span className="font-mono text-xs font-bold text-[#38bdf8]">
+                      {heroMarket.yesPercent}% • ${(heroMarket.yesPrice).toFixed(2)}
+                    </span>
+                  </button>
 
-                <button
-                  onClick={() => openBuyModal(heroMarket, "no")}
-                  className="flex items-center justify-between p-3 rounded-md bg-[#0f1520] hover:bg-[#141c2b] border border-[#1e2638] hover:border-[#c084fc]/40 transition cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-full bg-[#c084fc]/20 text-[#c084fc] flex items-center justify-center text-[10px] group-hover:scale-110 transition">
-                      ✕
+                  <button
+                    onClick={() => openBuyModal(heroMarket, "no")}
+                    className="flex items-center justify-between p-3 rounded-md bg-[#0f1520] hover:bg-[#141c2b] border border-[#1e2638] hover:border-[#c084fc]/40 transition cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-[#c084fc]/20 text-[#c084fc] flex items-center justify-center text-[10px] group-hover:scale-110 transition">
+                        ✕
+                      </div>
+                      <span className="text-xs font-semibold text-white">Buy NO</span>
                     </div>
-                    <span className="text-xs font-semibold text-white">Buy NO</span>
-                  </div>
-                  <span className="font-mono text-xs font-bold text-[#c084fc]">
-                    {heroMarket.noPercent}% • ${(heroMarket.noPrice).toFixed(2)}
-                  </span>
-                </button>
-              </div>
+                    <span className="font-mono text-xs font-bold text-[#c084fc]">
+                      {heroMarket.noPercent}% • ${(heroMarket.noPrice).toFixed(2)}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             /* Clean Empty State */
@@ -511,6 +535,7 @@ function MarketExplorerContent() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredMarkets.map((market) => {
                     const isResolved = market.phase === "resolved";
+                    const isEnded = !isResolved && isMarketExpired(market.cutoffAt);
                     const winOutcome = market.resolvedOutcome?.toLowerCase();
 
                     return (
@@ -526,6 +551,8 @@ function MarketExplorerContent() {
                         className={`panta-card p-4 flex flex-col justify-between gap-3 transition cursor-pointer group ${
                           isResolved
                             ? "border-slate-800 bg-[#0e121a] hover:border-slate-700"
+                            : isEnded
+                            ? "border-amber-500/20 bg-[#0e121a] hover:border-amber-500/40"
                             : "hover:border-[#2a344d]"
                         }`}
                       >
@@ -545,6 +572,10 @@ function MarketExplorerContent() {
                                 }`}
                               >
                                 🏆 {winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}
+                              </span>
+                            ) : isEnded ? (
+                              <span className="px-2 py-0.5 rounded font-bold border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                                ⏳ TRADING ENDED
                               </span>
                             ) : (
                               <span>{market.timestamp}</span>
@@ -610,6 +641,10 @@ function MarketExplorerContent() {
                           {isResolved ? (
                             <span className="text-emerald-400 font-semibold group-hover:underline">
                               Claim Payouts →
+                            </span>
+                          ) : isEnded ? (
+                            <span className="text-amber-400 font-semibold">
+                              Awaiting Resolution →
                             </span>
                           ) : (
                             <span className="text-slate-400">By {market.creator}</span>
@@ -712,14 +747,25 @@ function MarketExplorerContent() {
               </h2>
             </div>
 
+            {/* Expired Trading Warning */}
+            {isMarketExpired(activeModalMarket.cutoffAt) && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs font-mono text-amber-300 flex items-center gap-2">
+                <span>⏳</span>
+                <span>Trading has closed for this market. Awaiting outcome resolution. Betting is no longer permitted.</span>
+              </div>
+            )}
+
             {/* Outcome Toggle (YES / NO) */}
             <div className="grid grid-cols-2 gap-2 bg-[#121721] p-1.5 rounded-lg border border-[#1e2638]">
               <button
+                disabled={isMarketExpired(activeModalMarket.cutoffAt)}
                 onClick={() => setSelectedOutcome("yes")}
-                className={`py-2 rounded font-mono text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                  selectedOutcome === "yes"
-                    ? "bg-[#38bdf8] text-black shadow-md shadow-[#38bdf8]/20"
-                    : "text-slate-400 hover:text-white"
+                className={`py-2 rounded font-mono text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                  isMarketExpired(activeModalMarket.cutoffAt)
+                    ? "opacity-50 cursor-not-allowed text-slate-500"
+                    : selectedOutcome === "yes"
+                    ? "bg-[#38bdf8] text-black shadow-md shadow-[#38bdf8]/20 cursor-pointer"
+                    : "text-slate-400 hover:text-white cursor-pointer"
                 }`}
               >
                 <span>YES</span>
@@ -727,11 +773,14 @@ function MarketExplorerContent() {
               </button>
 
               <button
+                disabled={isMarketExpired(activeModalMarket.cutoffAt)}
                 onClick={() => setSelectedOutcome("no")}
-                className={`py-2 rounded font-mono text-xs font-semibold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                  selectedOutcome === "no"
-                    ? "bg-[#c084fc] text-black shadow-md shadow-[#c084fc]/20"
-                    : "text-slate-400 hover:text-white"
+                className={`py-2 rounded font-mono text-xs font-semibold transition flex items-center justify-center gap-1.5 ${
+                  isMarketExpired(activeModalMarket.cutoffAt)
+                    ? "opacity-50 cursor-not-allowed text-slate-500"
+                    : selectedOutcome === "no"
+                    ? "bg-[#c084fc] text-black shadow-md shadow-[#c084fc]/20 cursor-pointer"
+                    : "text-slate-400 hover:text-white cursor-pointer"
                 }`}
               >
                 <span>NO</span>
@@ -753,6 +802,7 @@ function MarketExplorerContent() {
                   type="number"
                   min="0.1"
                   step="any"
+                  disabled={isMarketExpired(activeModalMarket.cutoffAt)}
                   value={customInput}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -761,7 +811,9 @@ function MarketExplorerContent() {
                     setSpendAmount(isNaN(parsed) ? 0 : parsed);
                   }}
                   placeholder="Enter custom amount..."
-                  className="w-full bg-[#121721] border border-[#1e2638] rounded-lg py-2.5 pl-8 pr-16 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:border-[#38bdf8] transition shadow-inner"
+                  className={`w-full bg-[#121721] border border-[#1e2638] rounded-lg py-2.5 pl-8 pr-16 text-sm font-mono text-white placeholder-slate-600 focus:outline-none focus:border-[#38bdf8] transition shadow-inner ${
+                    isMarketExpired(activeModalMarket.cutoffAt) ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
                 />
                 <span className="absolute right-3 font-mono text-xs font-semibold text-[#38bdf8] bg-[#38bdf8]/10 px-2 py-0.5 rounded border border-[#38bdf8]/20">
                   USDC
@@ -774,14 +826,17 @@ function MarketExplorerContent() {
                   <button
                     key={amt}
                     type="button"
+                    disabled={isMarketExpired(activeModalMarket.cutoffAt)}
                     onClick={() => {
                       setSpendAmount(amt);
                       setCustomInput(String(amt));
                     }}
-                    className={`py-1.5 rounded text-xs font-mono font-medium transition cursor-pointer ${
-                      spendAmount === amt && customInput === String(amt)
-                        ? "bg-[#181f2c] text-[#38bdf8] border border-[#38bdf8] shadow-sm shadow-[#38bdf8]/10 font-bold"
-                        : "bg-[#121721] text-slate-400 border border-[#1e2638] hover:text-white hover:border-slate-600"
+                    className={`py-1.5 rounded text-xs font-mono font-medium transition ${
+                      isMarketExpired(activeModalMarket.cutoffAt)
+                        ? "opacity-50 cursor-not-allowed bg-[#121721] text-slate-600 border border-[#1e2638]"
+                        : spendAmount === amt && customInput === String(amt)
+                        ? "bg-[#181f2c] text-[#38bdf8] border border-[#38bdf8] shadow-sm shadow-[#38bdf8]/10 font-bold cursor-pointer"
+                        : "bg-[#121721] text-slate-400 border border-[#1e2638] hover:text-white hover:border-slate-600 cursor-pointer"
                     }`}
                   >
                     ${amt}
@@ -823,12 +878,21 @@ function MarketExplorerContent() {
               >
                 Cancel
               </button>
-              <button
-                onClick={handleProceedToSign}
-                className="flex-1 py-2 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer"
-              >
-                Confirm & Sign →
-              </button>
+              {isMarketExpired(activeModalMarket.cutoffAt) ? (
+                <button
+                  disabled
+                  className="flex-1 py-2 rounded bg-slate-800 text-slate-500 font-semibold text-xs font-mono cursor-not-allowed border border-slate-700"
+                >
+                  Trading Closed
+                </button>
+              ) : (
+                <button
+                  onClick={handleProceedToSign}
+                  className="flex-1 py-2 rounded bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer"
+                >
+                  Confirm & Sign →
+                </button>
+              )}
             </div>
           </div>
         </div>

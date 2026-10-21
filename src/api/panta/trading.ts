@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { pantaPost } from "./client.js";
 import { createSession } from "../../db/queries.js";
 import { config } from "../../config.js";
+import { getMarketById } from "./markets.js";
+import { isCutoffExpired } from "../../utils/formatters.js";
 
 // =============================================================================
 // Interfaces & Types
@@ -196,6 +198,18 @@ export async function reportTrade(params: ReportTradeParams): Promise<{ success:
 export async function createTradeSession(
   params: CreateTradeSessionParams
 ): Promise<TradeSessionResult> {
+  if (params.marketId) {
+    const market = await getMarketById(params.marketId).catch(() => null);
+    if (market) {
+      if (market.phase === "resolved" || market.resolvedOutcome) {
+        throw new Error("This market has already resolved. Betting is no longer permitted.");
+      }
+      if (isCutoffExpired(market.cutoffAt)) {
+        throw new Error("Trading has ended for this market. Betting is no longer permitted while awaiting outcome resolution.");
+      }
+    }
+  }
+
   const sessionId = `sess_buy_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const now = Math.floor(Date.now() / 1000);
   const expiresAt = now + 600; // 10 minutes TTL
