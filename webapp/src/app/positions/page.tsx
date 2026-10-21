@@ -18,7 +18,7 @@ export interface PositionItem {
   currentValueUsdc: number;
   pnlUsdc: number;
   pnlPercent: number;
-  status: "open" | "won" | "lost";
+  status: "open" | "won" | "lost" | "voided";
   isClaimed: boolean;
   claimableUsdc?: number;
   txSignature?: string;
@@ -108,16 +108,24 @@ export default function PositionsPage() {
               matched &&
               (matched.phase === "resolved" ||
                 matched.resolvedOutcome ||
-                matched.resolved_outcome)
+                matched.resolved_outcome ||
+                matched.resolutionStatus === "resolved" ||
+                matched.resolutionStatus === "void")
             ) {
-              const winOutcome = (
+              const rawWin = (
                 matched.resolvedOutcome ||
                 matched.resolved_outcome ||
-                ""
+                (matched.resolutionStatus === "void" ? "void" : "")
               ).toLowerCase();
               const userOutcome = (pos.outcome || "").toLowerCase();
 
-              if (winOutcome && userOutcome === winOutcome) {
+              if (rawWin === "void" || matched.resolutionStatus === "void") {
+                pos.status = "voided";
+                pos.claimableUsdc = pos.costUsdc; // 100% refund safety net
+                pos.currentValueUsdc = pos.costUsdc;
+                pos.pnlUsdc = 0;
+                pos.pnlPercent = 0;
+              } else if (rawWin && userOutcome === rawWin) {
                 pos.status = "won";
                 pos.claimableUsdc = pos.shares; // 1 winning share pays out $1.00 USDC
                 pos.currentValueUsdc = pos.shares;
@@ -126,7 +134,7 @@ export default function PositionsPage() {
                   pos.costUsdc > 0
                     ? ((pos.shares - pos.costUsdc) / pos.costUsdc) * 100
                     : 0;
-              } else if (winOutcome && userOutcome !== winOutcome) {
+              } else if (rawWin && userOutcome !== rawWin) {
                 pos.status = "lost";
                 pos.claimableUsdc = 0;
                 pos.currentValueUsdc = 0;
@@ -152,7 +160,9 @@ export default function PositionsPage() {
     fetchPositions();
   }, [publicKey, connected]);
 
-  const claimableList = positions.filter((p) => p.status === "won" && !p.isClaimed);
+  const claimableList = positions.filter(
+    (p) => (p.status === "won" || p.status === "voided") && !p.isClaimed
+  );
   const totalClaimableUsdc = claimableList.reduce((acc, p) => acc + (p.claimableUsdc || 0), 0);
   const totalPortfolioValue = positions.reduce((acc, p) => acc + p.currentValueUsdc, 0);
 
@@ -225,13 +235,13 @@ export default function PositionsPage() {
               </div>
               <div>
                 <div className="text-sm font-semibold text-white flex items-center gap-2">
-                  <span>Winnings Ready to Claim</span>
+                  <span>Payouts & Refunds Ready to Claim</span>
                   <span className="text-[10px] font-mono px-2 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Resolved Winner
+                    Non-Custodial Claim
                   </span>
                 </div>
                 <div className="text-xs text-slate-400 font-mono mt-0.5">
-                  You have <span className="text-white font-bold">${totalClaimableUsdc.toFixed(2)} USDC</span> in claimable winnings waiting on Solana.
+                  You have <span className="text-white font-bold">${totalClaimableUsdc.toFixed(2)} USDC</span> in claimable winnings/refunds waiting on Solana.
                 </div>
               </div>
             </div>
@@ -300,8 +310,7 @@ export default function PositionsPage() {
             {/* Mobile Card Feed (md:hidden) */}
             <div className="md:hidden flex flex-col gap-3">
               {positions.map((pos) => {
-                const isWinning = pos.status === "won";
-                const isClaimable = isWinning && !pos.isClaimed;
+                const isClaimable = (pos.status === "won" || pos.status === "voided") && !pos.isClaimed;
 
                 return (
                   <div
@@ -312,9 +321,17 @@ export default function PositionsPage() {
                       <span className="text-[10px] uppercase tracking-wider text-slate-400 bg-[#0b0e14] px-2 py-0.5 rounded border border-[#1e2638]">
                         {pos.category}
                       </span>
-                      {isClaimable ? (
+                      {pos.status === "voided" && !pos.isClaimed ? (
+                        <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                          ⚪ VOIDED (100% Refund Ready)
+                        </span>
+                      ) : pos.status === "voided" && pos.isClaimed ? (
+                        <span className="text-[11px] font-bold text-slate-400">
+                          ⚪ Refund Claimed ✓
+                        </span>
+                      ) : isClaimable ? (
                         <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
-                          🏆 Won (Ready to Claim)
+                          🏆 Won ($1.00/share)
                         </span>
                       ) : pos.status === "won" && pos.isClaimed ? (
                         <span className="text-[11px] font-bold text-emerald-400">
@@ -370,7 +387,11 @@ export default function PositionsPage() {
                           onClick={() => handleClaim(pos.marketId)}
                           className="flex-1 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs font-mono transition shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5"
                         >
-                          <span>💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}</span>
+                          <span>
+                            {pos.status === "voided"
+                              ? `💰 Claim 100% Refund ($${(pos.claimableUsdc || pos.costUsdc).toFixed(2)})`
+                              : `💰 Claim Winnings ($${(pos.claimableUsdc || pos.shares).toFixed(2)})`}
+                          </span>
                         </button>
                       ) : null}
                       <button
@@ -452,8 +473,12 @@ export default function PositionsPage() {
                                   onClick={() => handleClaim(pos.marketId)}
                                   className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-[11px] rounded transition shadow-md shadow-emerald-500/20 cursor-pointer"
                                 >
-                                  💰 Claim ${(pos.claimableUsdc || pos.shares).toFixed(2)}
+                                  {pos.status === "voided"
+                                    ? `💰 Claim 100% Refund ($${(pos.claimableUsdc || pos.costUsdc).toFixed(2)})`
+                                    : `💰 Claim Winnings ($${(pos.claimableUsdc || pos.shares).toFixed(2)})`}
                                 </button>
+                              ) : pos.status === "voided" && pos.isClaimed ? (
+                                <span className="text-slate-400 text-[11px] font-medium">⚪ Refund Claimed ✓</span>
                               ) : pos.status === "won" && pos.isClaimed ? (
                                 <span className="text-emerald-400 text-[11px] font-bold">🟢 Won • Claimed ✓</span>
                               ) : pos.status === "lost" ? (

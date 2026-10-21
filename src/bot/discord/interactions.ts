@@ -10,7 +10,7 @@ import {
 import { getMarketById, getMarketStats, getTrendingMarkets } from "../../api/panta/markets.js";
 import { createTradeSession } from "../../api/panta/trading.js";
 import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
-import { getRecentTradesForUser } from "../../db/queries.js";
+import { getRecentTradesForUser, disputeMarketOutcome } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
 import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
@@ -479,6 +479,53 @@ export function registerDiscordInteractions(client: Client): void {
           content: "❌ *Market draft preview dismissed.*",
           components: [],
         });
+        return;
+      }
+
+      // Dispute Resolution Challenge Button
+      if (customId.startsWith("dispute_")) {
+        const marketId = customId.replace("dispute_", "");
+        const market = await getMarketById(marketId).catch(() => null);
+        if (!market) {
+          await interaction.reply({
+            content: "❌ Market not found.",
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        if (market.resolutionStatus === "disputed") {
+          await interaction.reply({
+            content: "⚠️ This market is already disputed and auto-finalization is currently halted.",
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        if (market.resolutionStatus !== "proposed") {
+          await interaction.reply({
+            content: `⚠️ Market is not in the 2-hour challenge window (current status: ${market.resolutionStatus || "open"}).`,
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
+
+        const userTag = `@${interaction.user.username || interaction.user.id}`;
+        const updated = await disputeMarketOutcome(market.id, `Disputed via button by ${userTag}`);
+
+        await interaction.reply({
+          content: `⚠️ **Dispute Registered!** You have challenged the proposed outcome for **${market.title}**.\nTotal disputes: ${updated?.disputeCount || 1}.\n🛑 Automated finalization is now paused for review.`,
+          flags: MessageFlags.Ephemeral,
+        });
+
+        if (interaction.channel && interaction.channel.isTextBased()) {
+          await (interaction.channel as any).send({
+            content:
+              `⚠️ **RESOLUTION CHALLENGED!**\n` +
+              `Trader <@${interaction.user.id}> has disputed the proposed outcome for **${market.title}**.\n` +
+              `🛑 **Auto-finalization has been halted for human verification / consensus review.**`,
+          }).catch(() => {});
+        }
         return;
       }
     } catch (err: any) {

@@ -594,8 +594,9 @@ app.get("/api/positions", async (req: Request, res: Response) => {
       rawPositions.map(async (pos) => {
         let marketTitle = `Market ${pos.marketId}`;
         let category = "Prediction";
+        let m: any = null;
         try {
-          const m = await getMarketById(pos.marketId);
+          m = await getMarketById(pos.marketId);
           if (m) {
             marketTitle = m.title || marketTitle;
             category = m.category || category;
@@ -603,11 +604,37 @@ app.get("/api/positions", async (req: Request, res: Response) => {
         } catch {
           // ignore enrichment failure
         }
+        let status = pos.status || "open";
+        let costUsdc = pos.spendUsdc || pos.shares * 0.5;
+        let currentValueUsdc = pos.claimableUsdc || (status === "won" ? pos.shares * 1.0 : pos.shares * 0.5);
+        let claimableUsdc = pos.claimableUsdc || (status === "won" && !pos.isClaimed ? pos.shares : 0);
+        let pnlUsdc = currentValueUsdc - costUsdc;
+        let pnlPercent = costUsdc > 0 ? (pnlUsdc / costUsdc) * 100 : 0;
 
-        const costUsdc = pos.spendUsdc || pos.shares * 0.5;
-        const currentValueUsdc = pos.claimableUsdc || (pos.status === "won" ? pos.shares * 1.0 : pos.shares * 0.5);
-        const pnlUsdc = currentValueUsdc - costUsdc;
-        const pnlPercent = costUsdc > 0 ? (pnlUsdc / costUsdc) * 100 : 0;
+        if (m) {
+          const rawWin = (m.resolvedOutcome || (m.resolutionStatus === "void" ? "void" : "")).toLowerCase();
+          const userOutcome = (pos.outcome || "").toLowerCase();
+
+          if (rawWin === "void" || m.resolutionStatus === "void") {
+            status = "voided";
+            currentValueUsdc = costUsdc;
+            claimableUsdc = !pos.isClaimed ? costUsdc : 0; // 100% refund safety net
+            pnlUsdc = 0;
+            pnlPercent = 0;
+          } else if (rawWin && userOutcome === rawWin) {
+            status = "won";
+            currentValueUsdc = pos.shares * 1.0; // 1 winning share = $1.00 USDC
+            claimableUsdc = !pos.isClaimed ? pos.shares * 1.0 : 0;
+            pnlUsdc = pos.shares - costUsdc;
+            pnlPercent = costUsdc > 0 ? (pnlUsdc / costUsdc) * 100 : 0;
+          } else if (rawWin && userOutcome !== rawWin) {
+            status = "lost";
+            currentValueUsdc = 0;
+            claimableUsdc = 0;
+            pnlUsdc = -costUsdc;
+            pnlPercent = -100;
+          }
+        }
 
         return {
           id: `pos_${pos.marketId}_${pos.outcome}`,
@@ -620,9 +647,9 @@ app.get("/api/positions", async (req: Request, res: Response) => {
           currentValueUsdc,
           pnlUsdc,
           pnlPercent,
-          status: pos.status || "open",
+          status,
           isClaimed: Boolean(pos.isClaimed),
-          claimableUsdc: pos.claimableUsdc || (pos.status === "won" && !pos.isClaimed ? pos.shares : 0),
+          claimableUsdc,
         };
       })
     );

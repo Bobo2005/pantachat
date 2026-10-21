@@ -6,8 +6,18 @@ import { registerTelegramCommands } from "./bot/telegram/commands.js";
 import { registerTelegramCallbacks } from "./bot/telegram/callbacks.js";
 import { discordClient } from "./bot/discord/client.js";
 import { registerDiscordCommands, registerDiscordApplicationCommands } from "./bot/discord/commands.js";
-import { startResolutionPoller, registerWinnerNotificationHandler } from "./services/resolution-poller.js";
+import {
+  startResolutionPoller,
+  registerWinnerNotificationHandler,
+  registerProposedResolutionHandler,
+  registerDisputeNotificationHandler,
+} from "./services/resolution-poller.js";
 import { startGraduationPoller } from "./services/graduation-poller.js";
+import {
+  buildTelegramProposedResolutionCardText,
+  getProposedResolutionButtons,
+} from "./bot/common/card-builder.js";
+import { buildDiscordProposedResolutionCard } from "./bot/discord/embeds.js";
 
 // =============================================================================
 // Main Service Bootstrapper
@@ -58,6 +68,83 @@ async function bootstrap() {
         }
       } catch (err: any) {
         console.warn("[Notify] Discord winner alert notice:", err.message);
+      }
+    }
+  });
+
+  // 5b. Connect Proposed Resolution Broadcaster (2-Hour Dispute Challenge Window)
+  registerProposedResolutionHandler(async (notification) => {
+    if (notification.platform === "telegram" && notification.chatId) {
+      const cardText = buildTelegramProposedResolutionCardText({
+        id: notification.marketId,
+        title: notification.marketTitle,
+        proposedOutcome: notification.proposedOutcome,
+        evidenceUrl: notification.evidenceUrl,
+        evidenceSummary: notification.evidenceSummary,
+        confidenceScore: notification.confidenceScore,
+        disputeUntil: notification.disputeUntil,
+      });
+      const buttons = getProposedResolutionButtons(
+        notification.marketId,
+        notification.evidenceUrl
+      );
+      await bot.telegram
+        .sendMessage(notification.chatId, cardText, {
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: buttons as any },
+        })
+        .catch((err) => console.warn("[Notify] Telegram proposed alert error:", err.message));
+    } else if (notification.platform === "discord" && notification.chatId) {
+      try {
+        const channel = await discordClient.channels.fetch(notification.chatId);
+        if (channel && channel.isTextBased()) {
+          const { embed, components } = buildDiscordProposedResolutionCard({
+            id: notification.marketId,
+            title: notification.marketTitle,
+            proposedOutcome: notification.proposedOutcome,
+            evidenceUrl: notification.evidenceUrl,
+            evidenceSummary: notification.evidenceSummary,
+            confidenceScore: notification.confidenceScore,
+            disputeUntil: notification.disputeUntil,
+          });
+          await (channel as any).send({
+            embeds: [embed],
+            components,
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Notify] Discord proposed alert error:", err.message);
+      }
+    }
+  });
+
+  // 5c. Connect Dispute Alert Broadcaster
+  registerDisputeNotificationHandler(async (notification) => {
+    const text = [
+      `⚠️ *RESOLUTION CHALLENGED!*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Trader *${notification.disputerPlatformUserId}* has challenged the proposed outcome for:`,
+      `*${notification.marketTitle}*`,
+      ``,
+      `📝 *Reason:* ${notification.reason || "Dispute submitted via button / command"}`,
+      `⚠️ *Total Disputes:* ${notification.disputeCount}`,
+      `🛑 *Auto-finalization has been halted for human verification / consensus review.*`,
+    ].join("\n");
+
+    if (notification.platform === "telegram" && notification.chatId) {
+      await bot.telegram
+        .sendMessage(notification.chatId, text, { parse_mode: "Markdown" })
+        .catch((err) => console.warn("[Notify] Telegram dispute alert error:", err.message));
+    } else if (notification.platform === "discord" && notification.chatId) {
+      try {
+        const channel = await discordClient.channels.fetch(notification.chatId);
+        if (channel && channel.isTextBased()) {
+          await (channel as any).send({
+            content: text.replace(/\*/g, "**"),
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Notify] Discord dispute alert error:", err.message);
       }
     }
   });

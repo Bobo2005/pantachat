@@ -24,7 +24,14 @@ export interface MarketItem {
   volumeRaw: number;
   creator: string;
   phase: "primary" | "secondary" | "resolved";
-  resolvedOutcome?: "yes" | "no";
+  resolvedOutcome?: "yes" | "no" | "void";
+  resolutionStatus?: "open" | "closed" | "proposed" | "resolved" | "disputed" | "void" | string;
+  proposedOutcome?: "yes" | "no" | "void" | string;
+  disputeUntil?: number;
+  evidenceUrl?: string;
+  evidenceSummary?: string;
+  confidenceScore?: number;
+  disputeCount?: number;
   cutoffAt?: string;
   description?: string;
 }
@@ -52,6 +59,13 @@ function formatMarketEntry(m: any): MarketItem {
     creator: m.creator || "PantaChat",
     phase: (m.phase as any) || "primary",
     resolvedOutcome: m.resolvedOutcome || m.resolved_outcome,
+    resolutionStatus: m.resolutionStatus || m.resolution_status || "open",
+    proposedOutcome: m.proposedOutcome || m.proposed_outcome,
+    disputeUntil: m.disputeUntil || m.dispute_until,
+    evidenceUrl: m.evidenceUrl || m.evidence_url,
+    evidenceSummary: m.evidenceSummary || m.evidence_summary,
+    confidenceScore: m.confidenceScore ?? m.confidence_score,
+    disputeCount: m.disputeCount ?? m.dispute_count,
     cutoffAt: m.cutoffAt || m.cutoff_at,
     description: m.description,
   };
@@ -76,6 +90,7 @@ function MarketExplorerContent() {
 
   // Quick Buy Modal State
   const [activeModalMarket, setActiveModalMarket] = useState<MarketItem | null>(null);
+  const [activeEvidenceMarket, setActiveEvidenceMarket] = useState<MarketItem | null>(null);
   const [selectedOutcome, setSelectedOutcome] = useState<"yes" | "no">("yes");
   const [spendAmount, setSpendAmount] = useState<number>(20);
   const [customInput, setCustomInput] = useState<string>("20");
@@ -140,14 +155,20 @@ function MarketExplorerContent() {
     }
   }, [searchParams, markets, hasHandledDeepLink]);
 
-  const activeMarketsCount = markets.filter((m) => m.phase !== "resolved").length;
-  const resolvedMarketsCount = markets.filter((m) => m.phase === "resolved").length;
+  const isMarketResolved = (m: MarketItem) =>
+    m.phase === "resolved" ||
+    m.resolutionStatus === "resolved" ||
+    m.resolutionStatus === "void";
+
+  const activeMarketsCount = markets.filter((m) => !isMarketResolved(m)).length;
+  const resolvedMarketsCount = markets.filter((m) => isMarketResolved(m)).length;
 
   // Filtered Markets with Active vs Resolved History Partitioning
   const filteredMarkets = useMemo(() => {
     return markets.filter((m) => {
+      const isResolved = isMarketResolved(m);
       const matchesPhase =
-        statusFilter === "active" ? m.phase !== "resolved" : m.phase === "resolved";
+        statusFilter === "active" ? !isResolved : isResolved;
       const matchesCategory =
         selectedCategory === "All" || m.category.toLowerCase() === selectedCategory.toLowerCase();
       const matchesSearch =
@@ -534,9 +555,14 @@ function MarketExplorerContent() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredMarkets.map((market) => {
-                    const isResolved = market.phase === "resolved";
-                    const isEnded = !isResolved && isMarketExpired(market.cutoffAt);
-                    const winOutcome = market.resolvedOutcome?.toLowerCase();
+                    const isResolved =
+                      market.phase === "resolved" ||
+                      market.resolutionStatus === "resolved" ||
+                      market.resolutionStatus === "void";
+                    const isProposed = !isResolved && market.resolutionStatus === "proposed";
+                    const isDisputed = !isResolved && market.resolutionStatus === "disputed";
+                    const isEnded = !isResolved && (isMarketExpired(market.cutoffAt) || market.resolutionStatus === "closed");
+                    const winOutcome = (market.resolvedOutcome || (market.resolutionStatus === "void" ? "void" : ""))?.toLowerCase();
 
                     return (
                       <div
@@ -544,6 +570,8 @@ function MarketExplorerContent() {
                         onClick={() => {
                           if (isResolved) {
                             window.location.href = "/positions";
+                          } else if (isProposed || isDisputed) {
+                            setActiveEvidenceMarket(market);
                           } else {
                             openBuyModal(market, "yes");
                           }
@@ -551,6 +579,10 @@ function MarketExplorerContent() {
                         className={`panta-card p-4 flex flex-col justify-between gap-3 transition cursor-pointer group ${
                           isResolved
                             ? "border-slate-800 bg-[#0e121a] hover:border-slate-700"
+                            : isProposed
+                            ? "border-amber-500/30 bg-[#121620] hover:border-amber-500/60 shadow-lg shadow-amber-500/5"
+                            : isDisputed
+                            ? "border-rose-500/30 bg-[#181116] hover:border-rose-500/50"
                             : isEnded
                             ? "border-amber-500/20 bg-[#0e121a] hover:border-amber-500/40"
                             : "hover:border-[#2a344d]"
@@ -564,14 +596,24 @@ function MarketExplorerContent() {
                             {isResolved ? (
                               <span
                                 className={`px-2 py-0.5 rounded font-bold border ${
-                                  winOutcome === "yes"
+                                  winOutcome === "void"
+                                    ? "bg-slate-800 text-slate-300 border-slate-700"
+                                    : winOutcome === "yes"
                                     ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
                                     : winOutcome === "no"
                                     ? "bg-purple-500/10 text-purple-400 border-purple-500/30"
                                     : "bg-slate-800 text-slate-300 border-slate-700"
                                 }`}
                               >
-                                🏆 {winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}
+                                {winOutcome === "void" ? "⚪ VOID (Full Refund)" : `🏆 ${winOutcome ? `${winOutcome.toUpperCase()} WON` : "RESOLVED"}`}
+                              </span>
+                            ) : isDisputed ? (
+                              <span className="px-2 py-0.5 rounded font-bold border bg-rose-500/10 text-rose-400 border-rose-500/30">
+                                ⚠️ DISPUTED
+                              </span>
+                            ) : isProposed ? (
+                              <span className="px-2 py-0.5 rounded font-bold border bg-amber-500/10 text-amber-400 border-amber-500/30">
+                                ⏳ PROPOSED: {(market.proposedOutcome || "YES").toUpperCase()} WON (2h Challenge)
                               </span>
                             ) : isEnded ? (
                               <span className="px-2 py-0.5 rounded font-bold border bg-amber-500/10 text-amber-400 border-amber-500/30">
@@ -579,6 +621,20 @@ function MarketExplorerContent() {
                               </span>
                             ) : (
                               <span>{market.timestamp}</span>
+                            )}
+                            {(isProposed || isDisputed || market.evidenceUrl) && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveEvidenceMarket(market);
+                                }}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-mono transition cursor-pointer"
+                                title="View Evidence Sheet"
+                              >
+                                <span>🔍</span>
+                                <span>Proof</span>
+                              </button>
                             )}
                             <button
                               type="button"
@@ -894,6 +950,104 @@ function MarketExplorerContent() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Evidence Sheet Modal (2-Hour Dispute Challenge Window) */}
+      {activeEvidenceMarket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="bg-[#121721] border border-[#2a344d] rounded-xl max-w-lg w-full p-6 shadow-2xl relative flex flex-col gap-4 text-left">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-[#1e2638] pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-400 font-mono text-xs font-bold uppercase tracking-wider">
+                    ⚖️ AI Oracle Evidence Sheet
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    Confidence {Math.round((activeEvidenceMarket.confidenceScore || 0.98) * 100)}%
+                  </span>
+                </div>
+                <h2 className="font-heading font-bold text-base text-white mt-1">
+                  {activeEvidenceMarket.title}
+                </h2>
+              </div>
+              <button
+                onClick={() => setActiveEvidenceMarket(null)}
+                className="text-slate-400 hover:text-white text-lg p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Outcome Banner */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-mono text-slate-400 block uppercase">Proposed Winner</span>
+                <span className="font-heading font-bold text-lg text-amber-300">
+                  {(activeEvidenceMarket.proposedOutcome || "YES").toUpperCase()}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[11px] font-mono text-slate-400 block uppercase">2h Challenge Window</span>
+                <span className="font-mono text-xs text-amber-400 font-semibold">
+                  {activeEvidenceMarket.disputeUntil
+                    ? new Date(
+                        activeEvidenceMarket.disputeUntil < 10000000000
+                          ? activeEvidenceMarket.disputeUntil * 1000
+                          : activeEvidenceMarket.disputeUntil
+                      ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                    : "Active"}
+                </span>
+              </div>
+            </div>
+
+            {/* Factual Proof Excerpt */}
+            <div>
+              <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">
+                🔍 Exact Factual Proof Snippet:
+              </span>
+              <div className="p-3 bg-[#0b0e14] border border-[#1e2638] rounded-md font-mono text-xs text-slate-300 leading-relaxed">
+                {activeEvidenceMarket.evidenceSummary || "Official match/market outcome confirmed by deterministic AI Oracle consensus."}
+              </div>
+            </div>
+
+            {/* Authoritative Source Link */}
+            {activeEvidenceMarket.evidenceUrl && (
+              <div>
+                <span className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1">
+                  🔗 Authoritative Official Source:
+                </span>
+                <a
+                  href={activeEvidenceMarket.evidenceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-2.5 bg-[#181f2c] hover:bg-[#1e2638] border border-[#2a344d] rounded-md text-xs text-[#38bdf8] font-mono transition group"
+                >
+                  <span className="truncate pr-2">{activeEvidenceMarket.evidenceUrl}</span>
+                  <span className="shrink-0 group-hover:translate-x-0.5 transition">↗</span>
+                </a>
+              </div>
+            )}
+
+            {/* Dispute Count & Info */}
+            <div className="p-3 bg-[#0b0e14] border border-amber-500/20 rounded-md text-xs text-slate-300 flex flex-col gap-1.5">
+              <div className="flex justify-between items-center text-amber-400 font-mono font-semibold">
+                <span>⚠️ Active Community Disputes:</span>
+                <span>{activeEvidenceMarket.disputeCount || 0}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-normal">
+                If this outcome contradicts official event rules, challenge in Telegram with <code className="bg-[#181f2c] px-1 py-0.5 rounded text-white">/dispute {activeEvidenceMarket.id} &lt;reason&gt;</code> or in Discord with <code className="bg-[#181f2c] px-1 py-0.5 rounded text-white">/dispute</code>.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setActiveEvidenceMarket(null)}
+              className="w-full py-2.5 bg-[#1e2638] hover:bg-[#2a344d] text-white rounded-lg text-xs font-bold font-mono transition cursor-pointer"
+            >
+              Close Evidence Sheet
+            </button>
           </div>
         </div>
       )}

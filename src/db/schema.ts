@@ -18,7 +18,18 @@ export const markets = sqliteTable("markets", {
     .default("primary")
     .notNull(),
   cutoffAt: integer("cutoff_at"),
-  resolvedOutcome: text("resolved_outcome", { enum: ["yes", "no"] }),
+  resolvedOutcome: text("resolved_outcome", { enum: ["yes", "no", "void"] }),
+  resolutionStatus: text("resolution_status", {
+    enum: ["open", "closed", "proposed", "resolved", "disputed", "void"],
+  })
+    .default("open")
+    .notNull(),
+  proposedOutcome: text("proposed_outcome", { enum: ["yes", "no", "void"] }),
+  disputeUntil: integer("dispute_until"),
+  evidenceUrl: text("evidence_url"),
+  evidenceSummary: text("evidence_summary"),
+  confidenceScore: real("confidence_score"),
+  disputeCount: integer("dispute_count").default(0).notNull(),
   yesPrice: real("yes_price").default(0.5).notNull(),
   noPrice: real("no_price").default(0.5).notNull(),
   volumeUsdc: real("volume_usdc").default(0.0).notNull(),

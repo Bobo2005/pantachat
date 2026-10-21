@@ -380,8 +380,14 @@ function SigningFlow() {
           return;
         }
 
-        // Check if market has closed for trading before presenting quote
-        const isTradeSession = (data.session?.type === "buy") || !isCreateSession;
+        // Check if market has closed for trading before presenting quote (claims remain permitted)
+        const isClaimSession =
+          data.session?.type === "claim" ||
+          data.session?.type === "claim_creator" ||
+          queryType === "claim" ||
+          sessionId?.startsWith("sess_claim_");
+        const isTradeSession =
+          !isClaimSession && (data.session?.type === "buy" || !isCreateSession);
         const targetCutoff = data.market?.cutoffAt || data.market?.cutoff_at || data.payload?.cutoffAt;
         if (isTradeSession && isMarketExpired(targetCutoff)) {
           setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
@@ -455,7 +461,8 @@ function SigningFlow() {
           console.warn("[Sign Page] Could not fetch market list for fallback quote:", mErr);
         }
 
-        if (!isCreateSession && matchedMarket && isMarketExpired(matchedMarket.cutoffAt)) {
+        const isClientClaim = queryType === "claim" || sessionId?.startsWith("sess_claim_");
+        if (!isCreateSession && !isClientClaim && matchedMarket && isMarketExpired(matchedMarket.cutoffAt)) {
           setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
           setState("error");
           return;

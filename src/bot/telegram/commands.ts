@@ -5,7 +5,7 @@ import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/p
 import { createTradeSession } from "../../api/panta/trading.js";
 import { getMarketById, getTrendingMarkets } from "../../api/panta/markets.js";
 import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
-import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
+import { getRecentTradesForUser, getLeaderboard, disputeMarketOutcome } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
 import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
@@ -750,6 +750,146 @@ export function registerTelegramCommands(bot: Telegraf): void {
         `2. Alternative Web Faucet: [solfaucet.com](https://solfaucet.com)`,
         { parse_mode: "Markdown" }
       );
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. /dispute <market_id> <reason> - Challenge Proposed Outcome
+  // ---------------------------------------------------------------------------
+  bot.command("dispute", async (ctx) => {
+    const rawText = (ctx.message as any)?.text || "";
+    const parts = rawText.replace(/^\/dispute(@\w+)?\s*/i, "").trim().split(/\s+/);
+    const marketId = parts[0];
+    const reason = parts.slice(1).join(" ") || "Community dispute challenge";
+
+    if (!marketId) {
+      return sendSafeReply(
+        ctx,
+        `ℹ️ *Usage:* \`/dispute <market_id> <reason>\`\nExample: \`/dispute sol-100 Criteria resolves YES if Arsenal wins\``
+      );
+    }
+
+    try {
+      const market = await getMarketById(marketId).catch(() => null);
+      if (!market) {
+        return sendSafeReply(ctx, `❌ Market \`${marketId}\` not found.`);
+      }
+
+      if (market.resolutionStatus === "disputed") {
+        return sendSafeReply(
+          ctx,
+          `⚠️ Market "*${market.title}*" is already in disputed status. Auto-finalization is currently halted.`
+        );
+      }
+
+      if (market.resolutionStatus !== "proposed") {
+        return sendSafeReply(
+          ctx,
+          `⚠️ Market "*${market.title}*" is currently *${(market.resolutionStatus || "open").toUpperCase()}* and is not inside the 2-hour challenge window.`
+        );
+      }
+
+      const userTag = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || "Trader");
+      const updated = await disputeMarketOutcome(market.id, `${userTag}: ${reason}`);
+
+      const alertText = [
+        `⚠️ *RESOLUTION CHALLENGED!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `Trader *${userTag}* has disputed the proposed outcome for:`,
+        `*${market.title}*`,
+        ``,
+        `📝 *Reason:* ${reason}`,
+        `⚠️ *Total Disputes:* ${updated?.disputeCount || 1}`,
+        `🛑 *Auto-finalization has been halted for human verification / consensus review.*`,
+      ].join("\n");
+
+      return sendSafeReply(ctx, alertText);
+    } catch (err: any) {
+      return sendSafeReply(ctx, `❌ Failed to record dispute: ${err.message}`);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10. /oracle <market_id> - Inspect AI Oracle Verification Log
+  // ---------------------------------------------------------------------------
+  bot.command("oracle", async (ctx) => {
+    const rawText = (ctx.message as any)?.text || "";
+    const parts = rawText.replace(/^\/oracle(@\w+)?\s*/i, "").trim().split(/\s+/);
+    const marketId = parts[0];
+
+    if (!marketId) {
+      return sendSafeReply(
+        ctx,
+        `ℹ️ *Usage:* \`/oracle <market_id>\`\nExample: \`/oracle mkt_arsenal_chelsea_1790951354\``
+      );
+    }
+
+    try {
+      const market = await getMarketById(marketId).catch(() => null);
+      if (!market) {
+        return sendSafeReply(ctx, `❌ Market \`${marketId}\` not found.`);
+      }
+
+      const confPct =
+        market.confidenceScore !== undefined && market.confidenceScore !== null
+          ? `${Math.round(Number(market.confidenceScore) * 100)}%`
+          : "Pending (Eval at Cutoff)";
+
+      const disputeStr = market.disputeUntil
+        ? `${new Date(
+            market.disputeUntil < 10000000000
+              ? market.disputeUntil * 1000
+              : market.disputeUntil
+          ).toISOString()}`
+        : "Not triggered";
+
+      const cutoffStr = market.cutoffAt
+        ? new Date(
+            typeof market.cutoffAt === "number" && market.cutoffAt < 10000000000
+              ? market.cutoffAt * 1000
+              : market.cutoffAt
+          ).toISOString()
+        : "N/A";
+
+      const lines = [
+        `🔮 *PANTACHAT AI ORACLE VERIFICATION LOG*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🎯 *${market.title}*`,
+        `🆔 \`${market.id}\``,
+        ``,
+        `📊 *Lifecycle Status:* *${(market.resolutionStatus || "open").toUpperCase()}*`,
+        market.proposedOutcome ? `⏳ *Proposed Winner:* *${market.proposedOutcome.toUpperCase()}*` : null,
+        market.resolvedOutcome ? `🏆 *Final Settled Outcome:* *${market.resolvedOutcome.toUpperCase()}*` : null,
+        ``,
+        `🧠 *AI Confidence Score:* *${confPct}* (Deterministic temp 0.0)`,
+        `🔍 *Factual Evidence Snippet:*`,
+        `_${market.evidenceSummary || "Awaiting cutoff timestamp & official consensus verification."}_`,
+        ``,
+        `🔗 *Official Authority Source:*`,
+        market.evidenceUrl ? `[Click to Open Evidence Source](${market.evidenceUrl})` : `_No URL registered yet_`,
+        ``,
+        `⏱️ *Timestamps:*`,
+        `• Cutoff: \`${cutoffStr}\``,
+        `• Challenge Deadline: \`${disputeStr}\``,
+        `• Total Disputes: *${market.disputeCount || 0}*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `🛡️ *Decentralized & Tamper-Proof AI Resolution Engine*`,
+      ].filter(Boolean);
+
+      const buttons: any[] = [];
+      if (market.evidenceUrl) {
+        buttons.push([{ text: "🔍 Open Source Evidence", url: market.evidenceUrl }]);
+      }
+      if (market.resolutionStatus === "proposed") {
+        buttons.push([{ text: "⚠️ Dispute Resolution", callback_data: `dispute_${market.id}` }]);
+      }
+
+      return sendSafeReply(ctx, lines.join("\n"), {
+        parse_mode: "Markdown",
+        reply_markup: buttons.length > 0 ? { inline_keyboard: buttons } : undefined,
+      });
+    } catch (err: any) {
+      return sendSafeReply(ctx, `❌ Error retrieving Oracle verification log: ${err.message}`);
     }
   });
 

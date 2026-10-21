@@ -70,7 +70,11 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
 
   // Status Badge
   let statusBadge = "🟢 Live Primary Curve";
-  if (market.phase === "secondary") {
+  if (market.resolutionStatus === "disputed") {
+    statusBadge = `⚠️ Resolution Disputed (${market.disputeCount || 1} challenges)`;
+  } else if (market.resolutionStatus === "proposed") {
+    statusBadge = `⏳ Proposed: ${(market.proposedOutcome || "YES").toUpperCase()} (2h Challenge)`;
+  } else if (market.phase === "secondary") {
     statusBadge = "🟣 Graduated Secondary";
   } else if (market.phase === "resolved") {
     statusBadge = `⚪ Resolved (${(market.resolvedOutcome || "FINAL").toUpperCase()})`;
@@ -153,6 +157,47 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
         .setStyle(ButtonStyle.Secondary)
     );
     components.push(row1);
+  } else if (market.resolutionStatus === "proposed") {
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setLabel("🔍 View Evidence")
+        .setStyle(ButtonStyle.Link)
+        .setURL(market.evidenceUrl || "https://pantachat.market"),
+      new ButtonBuilder()
+        .setCustomId(`dispute_${market.id}`)
+        .setLabel("⚠️ Dispute Resolution")
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId(`details_${market.id}`)
+        .setLabel("📊 Details")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`refresh_${market.id}`)
+        .setLabel("🔄 Refresh")
+        .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(row1);
+  } else if (market.resolutionStatus === "disputed") {
+    const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`dispute_${market.id}`)
+        .setLabel("⚠️ Disputed (Under Review)")
+        .setStyle(ButtonStyle.Secondary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setLabel("🔍 View Evidence")
+        .setStyle(ButtonStyle.Link)
+        .setURL(market.evidenceUrl || "https://pantachat.market"),
+      new ButtonBuilder()
+        .setCustomId(`details_${market.id}`)
+        .setLabel("📊 Details")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`refresh_${market.id}`)
+        .setLabel("🔄 Refresh")
+        .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(row1);
   } else if (isExpired) {
     const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
@@ -220,6 +265,81 @@ export function buildDiscordMarketCard(market: MarketData): DiscordMarketCardRes
   }
 
   return { embed, components };
+}
+
+/**
+ * Builds dedicated Discord Embed & Buttons for a Proposed Market Resolution.
+ */
+export function buildDiscordProposedResolutionCard(
+  market: Partial<MarketData>
+): DiscordMarketCardResult {
+  const proposedOutcome = (market.proposedOutcome || "YES").toUpperCase();
+  const disputeCount = market.disputeCount || 0;
+  const evidenceUrl = market.evidenceUrl || "https://pantachat.market";
+  const evidenceSummary =
+    market.evidenceSummary || "Official outcome verified by autonomous AI Oracle.";
+
+  let disputeUnix = Math.floor(Date.now() / 1000) + 7200;
+  if (market.disputeUntil) {
+    disputeUnix =
+      market.disputeUntil < 10000000000
+        ? market.disputeUntil
+        : Math.floor(market.disputeUntil / 1000);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`⚖️ Proposed Resolution: ${market.title || "Market"}`)
+    .setColor(0xf59e0b) // Amber warning / challenge color
+    .setDescription(
+      `An automated verification has determined the real-world outcome for this market.\n` +
+      `**A 2-hour community challenge window is now active.**`
+    )
+    .addFields(
+      {
+        name: "⏳ Proposed Winner",
+        value: `**${proposedOutcome}**`,
+        inline: true,
+      },
+      {
+        name: "🔍 Verification Confidence",
+        value: `${Math.round((Number(market.confidenceScore) || 0.98) * 100)}%`,
+        inline: true,
+      },
+      {
+        name: "⚠️ Disputes Logged",
+        value: `${disputeCount} active disputes`,
+        inline: true,
+      },
+      {
+        name: "📜 Factual Evidence / Proof",
+        value: `_${evidenceSummary}_`,
+        inline: false,
+      },
+      {
+        name: "⏱️ Challenge Window Deadline",
+        value: `<t:${disputeUnix}:R> (<t:${disputeUnix}:f>)\n*Auto-finalizes in 2 hours if undisputed.*`,
+        inline: false,
+      }
+    )
+    .setFooter({ text: "⚡ PantaChat Tamper-Proof AI Oracle • Non-Custodial" })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setLabel("🔍 View Evidence")
+      .setStyle(ButtonStyle.Link)
+      .setURL(evidenceUrl),
+    new ButtonBuilder()
+      .setCustomId(`dispute_${market.id}`)
+      .setLabel("⚠️ Dispute Resolution")
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`details_${market.id}`)
+      .setLabel("📊 Details")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embed, components: [row] };
 }
 
 /**

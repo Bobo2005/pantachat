@@ -18,7 +18,14 @@ export interface MarketData {
   cutoffAt?: string | number | null;
   tradersCount?: number;
   creatorPlatformId?: string | null;
-  resolvedOutcome?: "yes" | "no" | null;
+  resolvedOutcome?: "yes" | "no" | "void" | null;
+  resolutionStatus?: "open" | "closed" | "proposed" | "resolved" | "disputed" | "void" | string | null;
+  proposedOutcome?: "yes" | "no" | "void" | string | null;
+  disputeUntil?: number | null;
+  evidenceUrl?: string | null;
+  evidenceSummary?: string | null;
+  confidenceScore?: number | null;
+  disputeCount?: number | null;
 }
 
 export interface InlineButton {
@@ -72,6 +79,22 @@ export function formatTimeRemaining(cutoffAt?: string | number | null): string {
   return `${minutes}m`;
 }
 
+/**
+ * Formats time remaining in the 2-hour dispute window.
+ */
+export function formatDisputeUntil(disputeUntil?: number | null): string {
+  if (!disputeUntil) return "2 hours from proposal";
+  const disputeMs = disputeUntil < 10000000000 ? disputeUntil * 1000 : disputeUntil;
+  const diffMs = disputeMs - Date.now();
+  if (diffMs <= 0) return "Dispute window closed (finalizing)";
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m remaining`;
+  return `${minutes}m remaining`;
+}
+
 // =============================================================================
 // Market Card Text Builder
 // =============================================================================
@@ -103,7 +126,11 @@ export function buildMarketCardText(market: MarketData): string {
   // Status Badge
   const isExpired = !market.resolvedOutcome && market.phase !== "resolved" && isCutoffExpired(market.cutoffAt);
   let statusBadge = "🟢 Live Primary Curve";
-  if (market.phase === "secondary") {
+  if (market.resolutionStatus === "disputed") {
+    statusBadge = `⚠️ Resolution Disputed (${market.disputeCount || 1} challenges)`;
+  } else if (market.resolutionStatus === "proposed") {
+    statusBadge = `⏳ Proposed: ${(market.proposedOutcome || "YES").toUpperCase()} (2h Challenge Window)`;
+  } else if (market.phase === "secondary") {
     statusBadge = "🟣 Graduated Secondary";
   } else if (market.phase === "resolved") {
     statusBadge = `⚪ Resolved (${(market.resolvedOutcome || "FINAL").toUpperCase()})`;
@@ -158,8 +185,29 @@ export function buildMarketCardText(market: MarketData): string {
 export function getPresetBuyButtons(
   marketId: string,
   phase: "primary" | "secondary" | "resolved" | string = "primary",
-  cutoffAt?: string | number | null
+  cutoffAt?: string | number | null,
+  resolutionStatus?: string | null,
+  evidenceUrl?: string | null
 ): InlineButton[][] {
+  // If resolution outcome is proposed, display 2-hour dispute challenge action buttons
+  if (resolutionStatus === "proposed") {
+    return getProposedResolutionButtons(marketId, evidenceUrl);
+  }
+
+  // If currently disputed, display dispute warning state
+  if (resolutionStatus === "disputed") {
+    return [
+      [
+        { text: "⚠️ Resolution Disputed (Halted)", callback_data: `dispute_${marketId}` },
+        { text: "🔍 View Evidence", url: evidenceUrl || "https://pantachat.market" },
+      ],
+      [
+        { text: "📊 Market Details", callback_data: `details_${marketId}` },
+        { text: "🔄 Refresh Status", callback_data: `refresh_${marketId}` },
+      ],
+    ];
+  }
+
   // If graduated to secondary, return link out (memory.md invariant)
   if (phase === "secondary") {
     return [
@@ -224,6 +272,62 @@ export function getPresetBuyButtons(
       { text: "💧 Get Demo Funds", url: `${config.WEBAPP_URL}/?faucet=true` },
     ],
   ];
+}
+
+/**
+ * Generates action buttons for the 2-hour dispute challenge window.
+ */
+export function getProposedResolutionButtons(
+  marketId: string,
+  evidenceUrl?: string | null
+): InlineButton[][] {
+  return [
+    [
+      { text: "🔍 View Evidence", url: evidenceUrl || "https://pantachat.market" },
+      { text: "⚠️ Dispute Resolution", callback_data: `dispute_${marketId}` },
+    ],
+    [
+      { text: "📊 Market Details", callback_data: `details_${marketId}` },
+      { text: "🔄 Refresh Status", callback_data: `refresh_${marketId}` },
+    ],
+  ];
+}
+
+/**
+ * Builds the Telegram card broadcast for an automated proposed market resolution.
+ */
+export function buildTelegramProposedResolutionCardText(
+  market: Partial<MarketData>
+): string {
+  const proposedOutcome = (market.proposedOutcome || "YES").toUpperCase();
+  const endsStr = formatDisputeUntil(market.disputeUntil);
+  const evidenceSummary =
+    market.evidenceSummary || "Official real-world outcome verified by AI Oracle.";
+  const evidenceUrl = market.evidenceUrl || "https://pantachat.market";
+  const disputeCount = market.disputeCount || 0;
+
+  return [
+    `⚖️ *PROPOSED RESOLUTION (2-HOUR CHALLENGE WINDOW)*`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `🎯 *${market.title}*`,
+    ``,
+    `⏳ *Status:* Proposed Winner: *${proposedOutcome}*`,
+    `🔍 *Authoritative Proof:*`,
+    `_${evidenceSummary}_`,
+    ``,
+    `🔗 *Evidence Source:* [Click to Verify Outcome](${evidenceUrl})`,
+    ``,
+    `⏱️ *Challenge Window:*`,
+    `Auto-finalizes in 2 hours if undisputed.`,
+    `Deadline: *${endsStr}*`,
+    ``,
+    `⚠️ *Disputes Logged:* ${disputeCount}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `If you believe this outcome contradicts official rules, tap *⚠️ Dispute Resolution* below or send:`,
+    `\`/dispute ${market.id || ""} <reason>\``,
+    ``,
+    `⚡ *PantaChat Tamper-Proof AI Oracle*`,
+  ].join("\n");
 }
 
 /**

@@ -22,7 +22,7 @@ import { createTradeSession } from "../../api/panta/trading.js";
 import { getMarketById, getTrendingMarkets } from "../../api/panta/markets.js";
 import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
 import { registerDiscordInteractions } from "./interactions.js";
-import { getRecentTradesForUser, getLeaderboard } from "../../db/queries.js";
+import { getRecentTradesForUser, getLeaderboard, disputeMarketOutcome } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
 import { solanaConnection, waitForConfirmation } from "../../utils/solana.js";
 import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
@@ -94,6 +94,34 @@ export const commandDefinitions = [
       option
         .setName("wallet")
         .setDescription("Your Solana Devnet public key (base58)")
+        .setRequired(true)
+    ),
+
+  // 5b. Slash Command: /dispute [market_id] [reason]
+  new SlashCommandBuilder()
+    .setName("dispute")
+    .setDescription("Dispute a proposed market outcome within the 2-hour challenge window")
+    .addStringOption((option) =>
+      option
+        .setName("market_id")
+        .setDescription("The ID of the market to challenge")
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("reason")
+        .setDescription("Factual evidence or explanation for dispute")
+        .setRequired(false)
+    ),
+
+  // 5c. Slash Command: /oracle [market_id]
+  new SlashCommandBuilder()
+    .setName("oracle")
+    .setDescription("View AI Oracle verification log, source URL, confidence score & dispute status")
+    .addStringOption((option) =>
+      option
+        .setName("market_id")
+        .setDescription("The ID of the market to inspect")
         .setRequired(true)
     ),
 
@@ -741,6 +769,187 @@ async function handleShareCommand(interaction: ChatInputCommandInteraction): Pro
   });
 }
 
+/**
+ * Handle /dispute [market_id] [reason]
+ */
+async function handleDisputeCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const marketId = interaction.options.getString("market_id", true);
+  const reason = interaction.options.getString("reason") || "Community dispute challenge";
+
+  try {
+    const market = await getMarketById(marketId).catch(() => null);
+    if (!market) {
+      await interaction.reply({
+        content: `❌ Market \`${marketId}\` not found.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (market.resolutionStatus === "disputed") {
+      await interaction.reply({
+        content: `⚠️ Market "**${market.title}**" is already disputed. Auto-finalization is currently halted.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (market.resolutionStatus !== "proposed") {
+      await interaction.reply({
+        content: `⚠️ Market "**${market.title}**" is currently **${(market.resolutionStatus || "open").toUpperCase()}** and is not inside the 2-hour challenge window.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const updated = await disputeMarketOutcome(
+      market.id,
+      `@${interaction.user.username || interaction.user.id}: ${reason}`
+    );
+
+    await interaction.reply({
+      content:
+        `⚠️ **RESOLUTION CHALLENGED!**\n` +
+        `Trader <@${interaction.user.id}> has disputed the proposed outcome for:\n` +
+        `**${market.title}**\n\n` +
+        `📝 **Reason:** ${reason}\n` +
+        `⚠️ **Total Disputes:** ${updated?.disputeCount || 1}\n` +
+        `🛑 **Auto-finalization has been halted for human verification / consensus review.**`,
+    });
+  } catch (err: any) {
+    await interaction.reply({
+      content: `❌ Failed to record dispute: ${err.message}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
+/**
+ * Handle /oracle [market_id] - Inspect AI Oracle Verification Log
+ */
+async function handleOracleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  const marketId = interaction.options.getString("market_id", true);
+
+  try {
+    const market = await getMarketById(marketId).catch(() => null);
+    if (!market) {
+      await interaction.reply({
+        content: `❌ Market \`${marketId}\` not found.`,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const confPct =
+      market.confidenceScore !== undefined && market.confidenceScore !== null
+        ? `${Math.round(Number(market.confidenceScore) * 100)}%`
+        : "Pending (Eval at Cutoff)";
+
+    const disputeStr = market.disputeUntil
+      ? `<t:${Math.floor(
+          (market.disputeUntil < 10000000000 ? market.disputeUntil * 1000 : market.disputeUntil) / 1000
+        )}:R>`
+      : "Not triggered";
+
+    const cutoffStr = market.cutoffAt
+      ? `<t:${Math.floor(
+          (typeof market.cutoffAt === "number" && market.cutoffAt < 10000000000
+            ? market.cutoffAt * 1000
+            : Number(market.cutoffAt)) / 1000
+        )}:F>`
+      : "N/A";
+
+    const embed = new EmbedBuilder()
+      .setColor(
+        market.resolutionStatus === "resolved"
+          ? 0x10b981 // Green
+          : market.resolutionStatus === "proposed"
+          ? 0xf59e0b // Amber
+          : market.resolutionStatus === "disputed"
+          ? 0xef4444 // Red
+          : market.resolutionStatus === "void"
+          ? 0x6b7280 // Gray
+          : 0x3b82f6 // Blue
+      )
+      .setTitle(`🔮 AI Oracle Verification Log: ${market.title.slice(0, 80)}`)
+      .setDescription(
+        `**Market ID:** \`${market.id}\`\n` +
+        `**Lifecycle Status:** \`${(market.resolutionStatus || "open").toUpperCase()}\`\n` +
+        (market.proposedOutcome ? `**⏳ Proposed Winner:** \`${market.proposedOutcome.toUpperCase()}\`\n` : "") +
+        (market.resolvedOutcome ? `**🏆 Final Settled Outcome:** \`${market.resolvedOutcome.toUpperCase()}\`\n` : "")
+      )
+      .addFields(
+        {
+          name: "🧠 AI Confidence Score",
+          value: `**${confPct}** (Deterministic Consensus Temp 0.0)`,
+          inline: true,
+        },
+        {
+          name: "⚠️ Total Disputes",
+          value: `**${market.disputeCount || 0}** dispute(s) registered`,
+          inline: true,
+        },
+        {
+          name: "⏱️ Timestamps",
+          value: `• **Cutoff:** ${cutoffStr}\n• **Challenge Deadline:** ${disputeStr}`,
+          inline: false,
+        },
+        {
+          name: "🔍 Factual Evidence Snippet",
+          value: market.evidenceSummary
+            ? `> ${market.evidenceSummary}`
+            : "_Awaiting cutoff timestamp & official consensus verification._",
+          inline: false,
+        },
+        {
+          name: "🔗 Official Resolution Source",
+          value: market.evidenceUrl
+            ? `[View Source Proof Document](${market.evidenceUrl})`
+            : "_No URL registered yet_",
+          inline: false,
+        }
+      )
+      .setFooter({
+        text: "PantaChat AI Oracle • Tamper-Proof Automated Resolution Engine",
+      })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder<ButtonBuilder>();
+    if (market.evidenceUrl) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setLabel("🔍 View Official Evidence")
+          .setStyle(ButtonStyle.Link)
+          .setURL(market.evidenceUrl)
+      );
+    }
+    if (market.resolutionStatus === "proposed") {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`dispute_${market.id}`)
+          .setLabel("⚠️ Challenge / Dispute")
+          .setStyle(ButtonStyle.Danger)
+      );
+    }
+    row.addComponents(
+      new ButtonBuilder()
+        .setLabel("🌐 View on WebApp")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`${config.WEBAPP_URL}/#mkt-${market.id}`)
+    );
+
+    await interaction.reply({
+      embeds: [embed],
+      components: row.components.length > 0 ? [row] : [],
+    });
+  } catch (err: any) {
+    await interaction.reply({
+      content: `❌ Error retrieving Oracle verification log: ${err.message}`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+}
+
 // =============================================================================
 // Register Discord Interaction Listeners
 // =============================================================================
@@ -786,6 +995,12 @@ export function registerDiscordCommands(client: Client): void {
             break;
           case "share":
             await handleShareCommand(interaction);
+            break;
+          case "dispute":
+            await handleDisputeCommand(interaction);
+            break;
+          case "oracle":
+            await handleOracleCommand(interaction);
             break;
         }
         return;

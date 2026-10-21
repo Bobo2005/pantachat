@@ -1,4 +1,4 @@
-import { eq, or, desc, sql, and } from "drizzle-orm";
+import { eq, or, desc, sql, and, ne } from "drizzle-orm";
 import { db } from "./index.js";
 import {
   markets,
@@ -85,16 +85,41 @@ export async function updateMarketMessageId(
 }
 
 /**
+ * Helper to sync updates to Supabase REST API in the background.
+ */
+export async function syncMarketToSupabase(id: string, patch: Record<string, any>): Promise<void> {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return;
+
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/markets?id=eq.${id}`, {
+      method: "PATCH",
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(patch),
+    });
+  } catch (sbErr: any) {
+    console.warn("[syncMarketToSupabase Warning]:", sbErr.message);
+  }
+}
+
+/**
  * Updates market lifecycle phase (primary -> secondary -> resolved).
  */
 export async function updateMarketPhase(
   id: string,
   phase: "primary" | "secondary" | "resolved",
-  resolvedOutcome?: "yes" | "no"
+  resolvedOutcome?: "yes" | "no" | "void"
 ): Promise<Market | undefined> {
   const updateData: Partial<NewMarket> = { phase };
   if (resolvedOutcome) {
     updateData.resolvedOutcome = resolvedOutcome;
+    updateData.resolutionStatus = resolvedOutcome === "void" ? "void" : "resolved";
   }
 
   const [updated] = await db
@@ -103,28 +128,120 @@ export async function updateMarketPhase(
     .where(eq(markets.id, id))
     .returning();
 
-  // Sync lifecycle phase and resolution to Supabase
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (supabaseUrl && supabaseKey) {
-    try {
-      await fetch(`${supabaseUrl}/rest/v1/markets?id=eq.${id}`, {
-        method: "PATCH",
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          phase,
-          resolved_outcome: resolvedOutcome || null,
-        }),
-      });
-    } catch (sbErr: any) {
-      console.warn("[updateMarketPhase Supabase Sync Warning]:", sbErr.message);
-    }
+  syncMarketToSupabase(id, {
+    phase,
+    resolved_outcome: resolvedOutcome || null,
+    resolution_status: resolvedOutcome ? (resolvedOutcome === "void" ? "void" : "resolved") : undefined,
+  });
+
+  return updated;
+}
+
+/**
+ * Updates resolution status ('open' | 'closed' | 'proposed' | 'resolved' | 'disputed' | 'void').
+ */
+export async function updateMarketResolutionStatus(
+  id: string,
+  resolutionStatus: "open" | "closed" | "proposed" | "resolved" | "disputed" | "void"
+): Promise<Market | undefined> {
+  const [updated] = await db
+    .update(markets)
+    .set({ resolutionStatus })
+    .where(eq(markets.id, id))
+    .returning();
+
+  syncMarketToSupabase(id, { resolution_status: resolutionStatus });
+  return updated;
+}
+
+/**
+ * Proposes a resolution outcome along with evidence and activates the 2-hour dispute challenge window.
+ */
+export async function proposeMarketOutcome(
+  id: string,
+  data: {
+    proposedOutcome: "yes" | "no" | "void";
+    evidenceUrl: string;
+    evidenceSummary: string;
+    confidenceScore: number;
+    disputeUntil: number; // Unix timestamp in seconds
   }
+): Promise<Market | undefined> {
+  const [updated] = await db
+    .update(markets)
+    .set({
+      resolutionStatus: "proposed",
+      proposedOutcome: data.proposedOutcome,
+      evidenceUrl: data.evidenceUrl,
+      evidenceSummary: data.evidenceSummary,
+      confidenceScore: data.confidenceScore,
+      disputeUntil: data.disputeUntil,
+    })
+    .where(eq(markets.id, id))
+    .returning();
+
+  syncMarketToSupabase(id, {
+    resolution_status: "proposed",
+    proposed_outcome: data.proposedOutcome,
+    evidence_url: data.evidenceUrl,
+    evidence_summary: data.evidenceSummary,
+    confidence_score: data.confidenceScore,
+    dispute_until: data.disputeUntil,
+  });
+
+  return updated;
+}
+
+/**
+ * Flags a market resolution proposal as disputed by community traders.
+ */
+export async function disputeMarketOutcome(
+  id: string,
+  reason?: string
+): Promise<Market | undefined> {
+  const current = await getMarketById(id);
+  const newCount = (current?.disputeCount || 0) + 1;
+
+  const [updated] = await db
+    .update(markets)
+    .set({
+      resolutionStatus: "disputed",
+      disputeCount: newCount,
+    })
+    .where(eq(markets.id, id))
+    .returning();
+
+  syncMarketToSupabase(id, {
+    resolution_status: "disputed",
+    dispute_count: newCount,
+  });
+
+  return updated;
+}
+
+/**
+ * Finalizes resolution of a market (sets phase to resolved and resolved_outcome).
+ */
+export async function resolveMarketFinal(
+  id: string,
+  finalOutcome: "yes" | "no" | "void"
+): Promise<Market | undefined> {
+  const resolutionStatus = finalOutcome === "void" ? "void" : "resolved";
+  const [updated] = await db
+    .update(markets)
+    .set({
+      phase: "resolved",
+      resolutionStatus,
+      resolvedOutcome: finalOutcome,
+    })
+    .where(eq(markets.id, id))
+    .returning();
+
+  syncMarketToSupabase(id, {
+    phase: "resolved",
+    resolution_status: resolutionStatus,
+    resolved_outcome: finalOutcome,
+  });
 
   return updated;
 }
@@ -137,6 +254,31 @@ export async function getActiveMarkets(): Promise<Market[]> {
     .select()
     .from(markets)
     .where(or(eq(markets.phase, "primary"), eq(markets.phase, "secondary")));
+}
+
+/**
+ * Retrieves all markets where trading has closed or cutoff expired, pending automated AI verification.
+ */
+export async function getMarketsPendingResolution(): Promise<Market[]> {
+  return db
+    .select()
+    .from(markets)
+    .where(
+      and(
+        ne(markets.phase, "resolved"),
+        or(eq(markets.resolutionStatus, "open"), eq(markets.resolutionStatus, "closed"))
+      )
+    );
+}
+
+/**
+ * Retrieves all markets currently within the 2-hour dispute challenge window ('proposed').
+ */
+export async function getProposedMarkets(): Promise<Market[]> {
+  return db
+    .select()
+    .from(markets)
+    .where(eq(markets.resolutionStatus, "proposed"));
 }
 
 /**
@@ -200,6 +342,13 @@ async function findDuplicateInSupabase(normalizedTarget: string): Promise<Market
             phase: (match.phase as any) || "primary",
             cutoffAt: cutMs,
             resolvedOutcome: match.resolved_outcome || null,
+            resolutionStatus: (match.resolution_status as any) || "open",
+            proposedOutcome: match.proposed_outcome || null,
+            disputeUntil: match.dispute_until ? Number(match.dispute_until) : null,
+            evidenceUrl: match.evidence_url || null,
+            evidenceSummary: match.evidence_summary || null,
+            confidenceScore: match.confidence_score !== undefined ? Number(match.confidence_score) : null,
+            disputeCount: Number(match.dispute_count || 0),
             yesPrice: Number(match.yes_price ?? 0.5),
             noPrice: Number(match.no_price ?? 0.5),
             volumeUsdc: Number(match.volume_usdc ?? 50),
@@ -418,6 +567,13 @@ export async function getTrendingMarkets(limit: number = 3): Promise<Market[]> {
             phase: m.phase || "primary",
             cutoffAt: m.cutoff_at,
             resolvedOutcome: m.resolved_outcome,
+            resolutionStatus: (m.resolution_status as any) || "open",
+            proposedOutcome: m.proposed_outcome || null,
+            disputeUntil: m.dispute_until ? Number(m.dispute_until) : null,
+            evidenceUrl: m.evidence_url || null,
+            evidenceSummary: m.evidence_summary || null,
+            confidenceScore: m.confidence_score !== undefined ? Number(m.confidence_score) : null,
+            disputeCount: Number(m.dispute_count || 0),
             yesPrice: Number(m.yes_price ?? 0.5),
             noPrice: Number(m.no_price ?? 0.5),
             volumeUsdc: Number(m.volume_usdc ?? 50),

@@ -11,7 +11,14 @@ export interface LiveMarket {
   description: string;
   creator: string;
   phase: "primary" | "secondary" | "resolved";
-  resolvedOutcome?: "yes" | "no";
+  resolvedOutcome?: "yes" | "no" | "void";
+  resolutionStatus?: "open" | "closed" | "proposed" | "resolved" | "disputed" | "void";
+  proposedOutcome?: "yes" | "no" | "void";
+  disputeUntil?: number;
+  evidenceUrl?: string;
+  evidenceSummary?: string;
+  confidenceScore?: number;
+  disputeCount?: number;
   yesPrice: number;
   noPrice: number;
   volumeUsdc: number;
@@ -81,6 +88,13 @@ export async function getAllLiveMarketsAsync(): Promise<LiveMarket[]> {
           creator: m.creator || "Community Predictor",
           phase: m.phase || "primary",
           resolvedOutcome: m.resolved_outcome || m.resolvedOutcome,
+          resolutionStatus: m.resolution_status || m.resolutionStatus || "open",
+          proposedOutcome: m.proposed_outcome || m.proposedOutcome,
+          disputeUntil: m.dispute_until ? Number(m.dispute_until) : (m.disputeUntil ? Number(m.disputeUntil) : undefined),
+          evidenceUrl: m.evidence_url || m.evidenceUrl,
+          evidenceSummary: m.evidence_summary || m.evidenceSummary,
+          confidenceScore: m.confidence_score !== undefined ? Number(m.confidence_score) : (m.confidenceScore !== undefined ? Number(m.confidenceScore) : undefined),
+          disputeCount: Number(m.dispute_count ?? m.disputeCount ?? 0),
           yesPrice: Number(m.yes_price ?? m.yesPrice ?? 0.5),
           noPrice: Number(m.no_price ?? m.noPrice ?? 0.5),
           volumeUsdc: Number(m.volume_usdc ?? m.volumeUsdc ?? 50),
@@ -167,6 +181,13 @@ export async function findDuplicateMarketAsync(title: string): Promise<LiveMarke
             creator: found.creator || "Community Predictor",
             phase: found.phase || "primary",
             resolvedOutcome: found.resolved_outcome || found.resolvedOutcome,
+            resolutionStatus: found.resolution_status || found.resolutionStatus || "open",
+            proposedOutcome: found.proposed_outcome || found.proposedOutcome,
+            disputeUntil: found.dispute_until ? Number(found.dispute_until) : (found.disputeUntil ? Number(found.disputeUntil) : undefined),
+            evidenceUrl: found.evidence_url || found.evidenceUrl,
+            evidenceSummary: found.evidence_summary || found.evidenceSummary,
+            confidenceScore: found.confidence_score !== undefined ? Number(found.confidence_score) : (found.confidenceScore !== undefined ? Number(found.confidenceScore) : undefined),
+            disputeCount: Number(found.dispute_count ?? found.disputeCount ?? 0),
             yesPrice: Number(found.yes_price ?? found.yesPrice ?? 0.5),
             noPrice: Number(found.no_price ?? found.noPrice ?? 0.5),
             volumeUsdc: Number(found.volume_usdc ?? found.volumeUsdc ?? 50),

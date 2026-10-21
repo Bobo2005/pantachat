@@ -17,7 +17,14 @@ export interface PantaMarket {
   liquidityUsdc?: number;
   cutoffAt: string | number; // ISO string or unix timestamp
   createdAt?: string | number;
-  resolvedOutcome?: "yes" | "no" | null;
+  resolvedOutcome?: "yes" | "no" | "void" | null;
+  resolutionStatus?: "open" | "closed" | "proposed" | "resolved" | "disputed" | "void" | string | null;
+  proposedOutcome?: "yes" | "no" | "void" | string | null;
+  disputeUntil?: number | null;
+  evidenceUrl?: string | null;
+  evidenceSummary?: string | null;
+  confidenceScore?: number | null;
+  disputeCount?: number | null;
   creatorWallet?: string;
   metadata?: Record<string, unknown>;
 }
@@ -149,6 +156,13 @@ export async function getMarketById(marketId: string): Promise<PantaMarket> {
         volumeUsdc: Number(dbMarket.volumeUsdc) || 0,
         cutoffAt: dbMarket.cutoffAt ? new Date(dbMarket.cutoffAt * 1000).toISOString() : new Date().toISOString(),
         resolvedOutcome: dbMarket.resolvedOutcome as any,
+        resolutionStatus: dbMarket.resolutionStatus || "open",
+        proposedOutcome: dbMarket.proposedOutcome || null,
+        disputeUntil: dbMarket.disputeUntil || null,
+        evidenceUrl: dbMarket.evidenceUrl || null,
+        evidenceSummary: dbMarket.evidenceSummary || null,
+        confidenceScore: dbMarket.confidenceScore ?? null,
+        disputeCount: dbMarket.disputeCount || 0,
         creatorWallet: dbMarket.creatorWallet || undefined,
       };
       setCached(cacheKey, pantaFormat, 30 * 1000);

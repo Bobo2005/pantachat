@@ -1,7 +1,7 @@
 import { type Telegraf, type Context } from "telegraf";
 import { getMarketById, getMarketStats, getTrendingMarkets } from "../../api/panta/markets.js";
 import { createTradeSession } from "../../api/panta/trading.js";
-import { getSessionById } from "../../db/queries.js";
+import { getSessionById, disputeMarketOutcome } from "../../db/queries.js";
 import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
 import { registerCardUpdateListener } from "../../services/attribution-reporter.js";
 import { formatUsdc, isCutoffExpired } from "../../utils/formatters.js";
@@ -273,6 +273,49 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
       }
     } catch (err: any) {
       await ctx.answerCbQuery("ℹ️ Details currently unavailable.").catch(() => {});
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5b. Dispute Resolution Challenge Button
+  // Matches "dispute_<marketId>"
+  // ---------------------------------------------------------------------------
+  bot.action(/^dispute_(.+)$/i, async (ctx) => {
+    const marketId = ctx.match[1];
+    try {
+      const market = await getMarketById(marketId).catch(() => null);
+      if (!market) {
+        return ctx.answerCbQuery("❌ Market not found.", { show_alert: true });
+      }
+
+      if (market.resolutionStatus === "disputed") {
+        return ctx.answerCbQuery("⚠️ This market resolution is already disputed and auto-finalization is halted.", { show_alert: true });
+      }
+
+      if (market.resolutionStatus !== "proposed") {
+        return ctx.answerCbQuery(`⚠️ Market is not in the 2-hour challenge window (current status: ${market.resolutionStatus || "open"}).`, { show_alert: true });
+      }
+
+      const userTag = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || "Trader");
+      const updated = await disputeMarketOutcome(market.id, `Disputed via button by ${userTag}`);
+
+      await ctx.answerCbQuery("⚠️ Dispute registered! Auto-finalization halted.", { show_alert: true });
+
+      const alertText = [
+        `⚠️ *RESOLUTION CHALLENGED!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `Trader *${userTag}* challenged the proposed resolution for:`,
+        `*${market.title}*`,
+        ``,
+        `⚠️ *Total Disputes:* ${updated?.disputeCount || 1}`,
+        `🛑 *Auto-finalization has been halted for human verification / consensus review.*`,
+      ].join("\n");
+
+      if (ctx.chat?.id) {
+        await ctx.reply(alertText, { parse_mode: "Markdown" }).catch(() => {});
+      }
+    } catch (err: any) {
+      await ctx.answerCbQuery(`❌ Dispute error: ${err.message}`, { show_alert: true });
     }
   });
 
