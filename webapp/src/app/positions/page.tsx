@@ -186,8 +186,13 @@ export default function PositionsPage() {
   const totalPortfolioValue = positions.reduce((acc, p) => acc + p.currentValueUsdc, 0);
 
   const handleClaim = (marketId: string) => {
+    const pos = positions.find((p) => p.marketId === marketId);
     const sessionId = `sess_claim_${Date.now()}`;
-    window.location.href = `/sign?session=${sessionId}&type=claim&market=${marketId}`;
+    const claimAmount = pos?.claimableUsdc || pos?.currentValueUsdc || (pos?.status === "voided" ? pos?.costUsdc : pos?.shares) || 20;
+    const titleParam = pos?.marketTitle ? `&title=${encodeURIComponent(pos.marketTitle)}` : "";
+    const outcomeParam = pos?.outcome ? `&outcome=${pos.outcome}` : "";
+    const statusParam = pos?.status === "voided" || pos?.resolvedOutcome === "void" ? "&isVoid=true" : "";
+    window.location.href = `/sign?session=${sessionId}&type=claim&market=${marketId}&amount=${claimAmount.toFixed(2)}${titleParam}${outcomeParam}${statusParam}`;
   };
 
   const handleSharePos = async (pos: PositionItem) => {

@@ -117,6 +117,10 @@ function SigningFlow() {
 
   const isCreateSession =
     sessionId?.startsWith("sess_create_") || queryType === "create";
+  const isClaimSession =
+    sessionId?.startsWith("sess_claim_") ||
+    queryType === "claim" ||
+    queryType === "claim_creator";
 
   const { connection } = useConnection();
   const { connected, publicKey, signTransaction } = useWallet();
@@ -402,7 +406,7 @@ function SigningFlow() {
 
         setSession({
           id: data.session?.id || sessionId,
-          type: data.session?.type || (isCreateSession ? "create" : "buy"),
+          type: data.session?.type || (isCreateSession ? "create" : isClaimSession ? "claim" : "buy"),
           status: data.session?.status || "pending",
           expiresAt: data.session?.expiresAt,
           payload: data.payload || {},
@@ -479,7 +483,7 @@ function SigningFlow() {
 
         setSession({
           id: sessionId,
-          type: isCreateSession ? "create" : "buy",
+          type: isCreateSession ? "create" : isClaimSession ? "claim" : "buy",
           status: "pending",
           payload: {
             marketId: matchedMarket?.id || queryMarketId || sessionId,
@@ -817,9 +821,9 @@ function SigningFlow() {
   // ---------------------------------------------------------------------------
   // Render: 5-State Visual Stepper Layout
   // ---------------------------------------------------------------------------
-  const sessionType = session?.type || (isCreateSession ? "create" : "buy");
+  const sessionType = session?.type || (isCreateSession ? "create" : isClaimSession ? "claim" : "buy");
   const isCreate = sessionType === "create";
-  const isClaim = sessionType === "claim" || sessionType === "claim_creator";
+  const isClaim = sessionType === "claim" || sessionType === "claim_creator" || isClaimSession;
 
   const displayTitle =
     session?.payload?.title ||
@@ -894,7 +898,11 @@ function SigningFlow() {
             {/* Market Title */}
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-mono uppercase tracking-wider text-[#38bdf8]">
-                {isCreate ? `⚡ LAUNCH NEW PREDICTION • ${displayCategory}` : displayCategory}
+                {isCreate
+                  ? `⚡ LAUNCH NEW PREDICTION • ${displayCategory}`
+                  : isClaim
+                  ? `💰 CLAIM PAYOUT • ${displayCategory}`
+                  : displayCategory}
               </span>
               <h2 className="font-heading font-semibold text-sm text-white leading-snug">
                 {displayTitle}
@@ -989,16 +997,38 @@ function SigningFlow() {
               </>
             ) : isClaim ? (
               /* Content for Claiming */
-              <div className="bg-[#0b0e14] p-3 rounded-md border border-[#1e2638] flex flex-col gap-2 text-xs font-mono">
-                <div className="flex justify-between text-slate-400">
-                  <span>Action</span>
-                  <span className="text-emerald-400 font-bold">Claim Winnings / Royalty</span>
+              <div className="bg-[#0b0e14] p-3.5 rounded-lg border border-[#1e2638] flex flex-col gap-2.5 text-xs font-mono">
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Action Type</span>
+                  <span className="text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                    {searchParams.get("isVoid") === "true" || (session?.market as any)?.resolutionStatus === "void" || (session?.market as any)?.resolvedOutcome === "void"
+                      ? "100% PRINCIPAL REFUND"
+                      : "CLAIM WINNING PAYOUT"}
+                  </span>
                 </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Destination</span>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Payout Amount</span>
+                  <span className="text-white font-bold text-sm">
+                    ${amountUsdc.toFixed(2)} USDC
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Settlement Rate</span>
+                  <span className="text-cyan-400">
+                    {searchParams.get("isVoid") === "true" || (session?.market as any)?.resolutionStatus === "void" || (session?.market as any)?.resolvedOutcome === "void"
+                      ? "100% of deposited USDC"
+                      : "$1.00 USDC per winning share"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Destination Wallet</span>
                   <span className="text-white font-medium">
                     {publicKey ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}` : "Connected Wallet"}
                   </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400">
+                  <span>Claim Protocol Fee</span>
+                  <span className="text-emerald-400">$0.00 (Zero deduction)</span>
                 </div>
               </div>
             ) : (
@@ -1122,7 +1152,7 @@ function SigningFlow() {
                   onClick={() => setVisible(true)}
                   className="w-full py-2.5 rounded-md bg-white hover:bg-slate-200 text-black text-xs font-semibold font-mono transition cursor-pointer"
                 >
-                  {isCreate ? "Connect Phantom to Launch Market" : "Connect Phantom to Sign"}
+                  {isCreate ? "Connect Phantom to Launch Market" : isClaim ? "Connect Phantom to Claim USDC" : "Connect Phantom to Sign"}
                 </button>
               )
             ) : (
@@ -1139,7 +1169,7 @@ function SigningFlow() {
                 ) : isCreate ? (
                   "🚀 Confirm & Launch Market on Solana"
                 ) : isClaim ? (
-                  "💰 Claim USDC to Wallet"
+                  `💰 Claim $${amountUsdc.toFixed(2)} USDC to Wallet`
                 ) : (
                   `Sign & Confirm ${outcome.toUpperCase()} ($${amountUsdc} USDC)`
                 )}
@@ -1190,10 +1220,16 @@ function SigningFlow() {
             </div>
             <div className="flex flex-col gap-1">
               <h3 className="font-heading font-bold text-lg text-white">
-                {isCreate ? "Market Launched Successfully!" : "Order Confirmed!"}
+                {isCreate
+                  ? "Market Launched Successfully!"
+                  : isClaim
+                  ? "Payout Claimed Successfully!"
+                  : "Order Confirmed!"}
               </h3>
               <p className="text-xs text-slate-400 font-mono">
-                Your transaction has been confirmed on the Solana blockchain.
+                {isClaim
+                  ? "Your USDC winnings/refund have been transferred directly to your Solana wallet from the market vault."
+                  : "Your transaction has been confirmed on the Solana blockchain."}
               </p>
             </div>
 
@@ -1205,6 +1241,15 @@ function SigningFlow() {
                 className="text-xs font-mono text-[#38bdf8] hover:underline"
               >
                 View on Solana Explorer ↗
+              </a>
+            )}
+
+            {isClaim && (
+              <a
+                href="/positions"
+                className="w-full py-2.5 px-3 rounded-md bg-[#181f2c] hover:bg-[#20293a] border border-[#1e2638] text-slate-200 text-xs font-mono font-medium transition flex items-center justify-center gap-2"
+              >
+                <span>📊 Return to Portfolio</span>
               </a>
             )}
 
