@@ -158,6 +158,8 @@ Orders must strictly follow:
 * **Winning Markets:** Payout is calculated at strictly **$1.00 USDC per winning share**.
 * **VOID Canceled Markets:** Returns **100% of deposited USDC** to both YES and NO holders with zero fee deduction.
 * **Signing Session Bypass:** `/sign` explicitly allows claim/refund sessions (`isClaimSession`) to execute past market cutoff without being blocked by trade closure guards.
+* **Non-Rebetting Invariant:** Claiming winnings or refunds must NEVER generate a new trade or append a new position. The signing flow updates existing positions in client `localStorage` to `isClaimed = true`, syncs Supabase via `claimUserPositionsAsync()`, and dispatches a celebratory payout announcement to the group chat.
+* **Strict Expired Market Trading Block:** The moment `cutoffAt` passes or `phase === 'resolved'`, no BUY trade can be approved across any surface. Client-side `/sign` pre-validates expiration before wallet prompting, and backend `/api/sessions/[id]/submit` returns 400 `MARKET_CLOSED` / `MARKET_RESOLVED` for trades while permitting claims.
 
 ---
 
@@ -180,6 +182,7 @@ Every prediction market position display across all client surfaces must render 
 * **Telegram Mini App & Mobile WebApp (`/positions`):**
   * Mobile card view displays category, settled result pill (`🟢 Settled: YES WON`, `🟣 Settled: NO WON`, `⚪ Settled: VOID`), stance, cost vs. value, PnL, and payout status.
   * Immediate 1-tap `💰 Claim Winnings` or `💰 Claim 100% Refund` action button.
+  * Aggregates total claimable balance per market so multi-tranche bets are claimed in a single transaction.
 * **Desktop WebApp (`/positions`):**
-  * Data table provides the dedicated `Settled Result` column with corresponding claim buttons.
+  * Data table provides the dedicated `Settled Result` column with corresponding claim buttons, transitioning to `🟢 Won • Claimed ✓` or `⚪ Refund Claimed ✓` post-confirmation.
 

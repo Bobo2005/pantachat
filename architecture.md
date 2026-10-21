@@ -396,6 +396,11 @@ PantaChat enforces architectural and visual parity across all client surfaces: *
                       │    • Smart Contract Vault (PDA)        │
                       │      ──[Burns Shares / Pays USDC]──>   │
                       │      Winner's Wallet (Phantom/Solflare)│
+                      │    • Post-Claim Synchronization:       │
+                      │      - isClaimed = true in localStorage│
+                      │      - claimUserPositionsAsync() sync  │
+                      │      - Dispatches Celebratory Notice   │
+                      │      - NO RE-BETTING (No new positions)│
                       └────────────────────────────────────────┘
 ```
 
@@ -406,14 +411,24 @@ All platforms compute position settlement deterministically:
 3. **⚪ VOID (Canceled):** Event canceled or invalidated. Depositors receive a 100% principal USDC refund.
 4. **⏳ In Progress / ⏳ Trading Closed:** Market actively open or trading locked awaiting cutoff AI verification.
 
-### 10.2 Ephemeral Claim Sessions (`createClaimSession`)
+### 10.2 Ephemeral Claim Sessions (`createClaimSession`) & Non-Rebetting Execution
 - When a user views their portfolio in Telegram or Discord (`/positions`), the bot asynchronously evaluates whether any holding has claimable winnings or refunds.
 - If claimable, the bot calls `createClaimSession()` (`src/api/panta/positions.ts`) to store an ephemeral session (`sess_claim_...`) with a 10-minute TTL.
 - **Telegram Bot:** Renders an inline button using the Telegram WebApp SDK (`web_app: { url: signUrl }`) opening the TMA sheet without leaving the chat, with an external browser fallback.
 - **Discord Bot:** Renders an interactive `ButtonBuilder` linking directly to `/sign?session=...`.
+- **Claim Execution Invariant (No Re-Betting):**
+  - Session types for claims are strictly typed as `"claim"` or `"claim_creator"` across all APIs (`/api/sessions/[id]`, `/api/sessions/[id]/submit`, and `/api/positions/claim`).
+  - Upon on-chain confirmation, the client updates existing records in `localStorage` (`panta_positions_${wallet}`) setting `isClaimed = true`, `claimTxSignature = finalSig`, and `claimedAt = Date.now()`.
+  - Claim transactions **never** generate a new `newPosEntry` or append open bets to the user's portfolio.
+  - The server handler runs `claimUserPositionsAsync(marketId, wallet, finalSig)` to mark trades claimed across memory, Supabase (`trades.is_claimed = true`), and cloud storage.
+- **Strict Expired Market Trading Lock:**
+  - Markets past their `cutoffAt` timestamp or with `phase === 'resolved'` strictly reject BUY orders across all entry points with 400 `MARKET_CLOSED` / `MARKET_RESOLVED`.
+  - The signing UI (`/sign`) performs client-side expiration checks to prevent wallet prompts for closed trades.
+  - Claims remain completely unlocked on settled markets, allowing winners and voided depositors to retrieve funds at any time.
 
 ### 10.3 Hybrid Cloud Synchronization
 - Database lookups in `src/db/queries.ts` (`getMarketById`) automatically query Supabase REST endpoints if a market ID is not found in the local SQLite cache.
 - User handles are matched with or without leading `@` symbols, guaranteeing that positions created via WebApp, TMA, or bots are visible everywhere simultaneously.
+- Aggregate claim calculations on `/positions` combine multiple positions for the same resolved market into a single on-chain transaction.
 
 

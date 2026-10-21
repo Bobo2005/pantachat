@@ -104,12 +104,17 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
      - Broadcasts Proposed Resolution cards with evidence links to Telegram and Discord.
    - Community dispute commands: `/dispute <market_id> <reason>` in Telegram and Discord halts auto-settlement for manual verification.
    - Undisputed markets auto-settle after 2 hours with real-time winner alerts.
-9. **Automated Payout Settlement, VOID Refunds & UI/UX (Phase 3)**:
+9. **Automated Payout Settlement, Non-Rebetting Claim Engine & VOID Refunds (Phase 3)**:
    - **Explorer Grid (`/`)**: Displays amber badge `⏳ PROPOSED: YES WON (2h Challenge)` and opens an interactive **Evidence Sheet Modal** showing official evidence URL, exact match score/price proof, AI confidence score, and 2-hour dispute countdown.
    - **Positions Hub (`/positions`)**:
      - Winning positions (`Status: WON`) evaluated at $1.00 USDC per share with active `Claim Winnings` button.
      - Canceled events (`Status: VOIDED`): 100% refund safety net returning 100% of deposited USDC with `Claim 100% Refund` button.
-   - **Signing Session (`/sign`)**: Allows claim and refund withdrawals on expired/resolved markets without trade closure blockage.
+     - Multi-position aggregation: combines all open winnings/refunds for a market into one claimable sum, avoiding redundant transactions.
+     - Post-claim status transitions immediately to `🟢 Won • Claimed ✓` or `⚪ Refund Claimed ✓`.
+   - **Signing Session (`/sign`)**:
+     - Dedicated claim flow (`type: "claim"` / `"claim_creator"`) with on-chain SPL memo (`PantaChat:Claim:<marketId>`).
+     - **Non-Rebetting Invariant**: Confirmed claims update existing positions in `localStorage` (`isClaimed = true`, `claimTxSignature = signature`), trigger backend/Supabase database updates via `claimUserPositionsAsync()`, and **never** create a new bet.
+     - **Strict Cutoff Trading Guard**: Blocks any BUY order on markets past `cutoffAt` or in `phase === 'resolved'`. Claims remain explicitly allowed and encouraged on settled markets.
    - **Bot Transparency Commands**: `/oracle <market_id>` in Telegram and Discord displaying AI Oracle verification log, confidence score, source URL button, timestamps, and dispute status.
    - **Test Suite Verification**: Verified with `scripts/test_phase1_oracle.ts`, `scripts/test_phase2_resolution_pipeline.ts`, and `scripts/test_phase3_settlement_and_oracle.ts` (100% passing, 0 TypeScript compilation errors).
 
@@ -190,10 +195,12 @@ npm --prefix webapp run build
 6. **2-Hour Challenge Window & Disputes:**
    - Proposed outcomes enter a 2-hour dispute window (`dispute_until = now + 7200`).
    - Traders can challenge with `/dispute <market_id> <reason>` in chat to freeze settlement for consensus review.
-7. **Claim Winnings, 100% VOID Refunds & Royalties:**
+7. **Claim Winnings, 100% VOID Refunds & Royalties (Zero Re-Betting):**
    - Navigate to **Positions** (`/positions`) on WebApp, Mobile, TMA, or run `/positions` in Telegram/Discord.
    - Winning shares pay out at $1.00 USDC each; canceled/unresolvable events refund 100% of deposited USDC.
-   - Direct 1-tap claim buttons generate non-custodial Solana transactions (`PantaChat:Claim:<marketId>`).
+   - Direct 1-tap claim buttons aggregate all open winnings for that market into a single non-custodial Solana transaction (`PantaChat:Claim:<marketId>`).
+   - Claim transactions disburse winnings and mark positions `isClaimed = true` without creating redundant open bets or modifying market liquidity.
+   - Expired and resolved markets strictly block any new bets while keeping claim buttons fully interactive.
    - Navigate to **Royalties** (`/earnings`) to view and claim creator fees accrued upon market graduation.
 
 ---
