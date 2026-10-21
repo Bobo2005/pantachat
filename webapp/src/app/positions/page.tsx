@@ -19,6 +19,8 @@ export interface PositionItem {
   pnlUsdc: number;
   pnlPercent: number;
   status: "open" | "won" | "lost" | "voided";
+  resolvedOutcome?: "yes" | "no" | "void";
+  resolutionStatus?: string;
   isClaimed: boolean;
   claimableUsdc?: number;
   txSignature?: string;
@@ -92,10 +94,21 @@ export default function PositionsPage() {
 
           for (const pos of merged) {
             const matched = marketList.find(
-              (m) => m.id === pos.marketId || m.title === pos.marketTitle
+              (m) =>
+                m.id === pos.marketId ||
+                (pos.marketTitle && pos.marketTitle !== "Prediction Market" && m.title === pos.marketTitle)
             );
 
             if (matched) {
+              if (matched.title && (!pos.marketTitle || pos.marketTitle === "Prediction Market")) {
+                pos.marketTitle = matched.title;
+              }
+              if (matched.category && (!pos.category || pos.category === "Crypto")) {
+                pos.category = matched.category;
+              }
+              pos.resolvedOutcome = matched.resolvedOutcome;
+              pos.resolutionStatus = matched.resolutionStatus;
+
               const yesPct =
                 typeof matched.yesPercent === "number"
                   ? matched.yesPercent
@@ -112,11 +125,17 @@ export default function PositionsPage() {
                 matched.resolutionStatus === "resolved" ||
                 matched.resolutionStatus === "void")
             ) {
-              const rawWin = (
+              let rawWin = (
                 matched.resolvedOutcome ||
                 matched.resolved_outcome ||
                 (matched.resolutionStatus === "void" ? "void" : "")
-              ).toLowerCase();
+              )?.toLowerCase();
+
+              // Safe fallback for resolved markets
+              if (!rawWin && matched.phase === "resolved") {
+                rawWin = "void";
+              }
+
               const userOutcome = (pos.outcome || "").toLowerCase();
 
               if (rawWin === "void" || matched.resolutionStatus === "void") {
@@ -127,8 +146,8 @@ export default function PositionsPage() {
                 pos.pnlPercent = 0;
               } else if (rawWin && userOutcome === rawWin) {
                 pos.status = "won";
-                pos.claimableUsdc = pos.shares; // 1 winning share pays out $1.00 USDC
-                pos.currentValueUsdc = pos.shares;
+                pos.claimableUsdc = pos.shares * 1.0; // 1 winning share pays out $1.00 USDC
+                pos.currentValueUsdc = pos.shares * 1.0;
                 pos.pnlUsdc = pos.shares - pos.costUsdc;
                 pos.pnlPercent =
                   pos.costUsdc > 0
@@ -416,18 +435,18 @@ export default function PositionsPage() {
                   <thead className="bg-[#0b0e14] text-slate-400 uppercase text-[10px] tracking-wider border-b border-[#1e2638]">
                     <tr>
                       <th className="py-3 px-4">Market</th>
-                      <th className="py-3 px-4">Outcome</th>
+                      <th className="py-3 px-4">My Bet</th>
+                      <th className="py-3 px-4">Settled Result</th>
                       <th className="py-3 px-4">Shares</th>
                       <th className="py-3 px-4">Cost</th>
                       <th className="py-3 px-4">Value</th>
                       <th className="py-3 px-4">PnL</th>
-                      <th className="py-3 px-4 text-right">Action</th>
+                      <th className="py-3 px-4 text-right">Status / Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#181f2c]">
                     {positions.map((pos) => {
-                      const isWinning = pos.status === "won";
-                      const isClaimable = isWinning && !pos.isClaimed;
+                      const isClaimable = (pos.status === "won" || pos.status === "voided") && !pos.isClaimed;
 
                       return (
                         <tr key={pos.id} className="hover:bg-[#151c27] transition">
@@ -440,12 +459,32 @@ export default function PositionsPage() {
                             <span
                               className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                                 pos.outcome === "yes"
-                                  ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/20"
-                                  : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/20"
+                                   ? "bg-[#38bdf8]/10 text-[#38bdf8] border border-[#38bdf8]/20"
+                                   : "bg-[#c084fc]/10 text-[#c084fc] border border-[#c084fc]/20"
                               }`}
                             >
                               {pos.outcome.toUpperCase()}
                             </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {pos.status === "voided" || pos.resolvedOutcome === "void" ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                                ⚪ VOID (Canceled)
+                              </span>
+                            ) : pos.resolvedOutcome === "yes" ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                                🟢 YES WON
+                              </span>
+                            ) : pos.resolvedOutcome === "no" ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/30 whitespace-nowrap">
+                                🟣 NO WON
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/20 whitespace-nowrap">
+                                ⏳ In Progress
+                              </span>
+                            )}
                           </td>
 
                           <td className="py-3.5 px-4 text-slate-300 font-medium">
