@@ -4,6 +4,7 @@ import { draftMarketFromText } from "../../ai/drafter.js";
 import { initiateMarketCreationSession, DuplicateMarketError } from "../../api/panta/create.js";
 import { createTradeSession } from "../../api/panta/trading.js";
 import { getMarketById, getTrendingMarkets } from "../../api/panta/markets.js";
+import { createClaimSession } from "../../api/panta/positions.js";
 import { buildMarketCardText, getPresetBuyButtons, generateProgressBar, buildTelegramTrendingCard } from "../common/card-builder.js";
 import { getRecentTradesForUser, getLeaderboard, disputeMarketOutcome } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
@@ -486,32 +487,160 @@ export function registerTelegramCommands(bot: Telegraf): void {
       if (userTrades.length === 0) {
         return sendSafeReply(
           ctx,
-          `📊 *Your Positions*\n\n` +
-          `You have no recorded bets yet! Tap YES or NO on any market card or use \`/market\` to start a new market.`,
+          [
+            `📊 *YOUR PORTFOLIO & POSITIONS*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `You have no recorded prediction bets yet in this chat!`,
+            ``,
+            `🎯 *Get Started:*`,
+            `• Tap \`YES\` or \`NO\` on any live prediction card`,
+            `• Or reply to banter with \`/market\` to launch your own market and earn creator royalties`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `⚡ *Non-custodial trading on Solana Devnet*`,
+          ].join("\n"),
           {
             parse_mode: "Markdown",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
+                [
+                  {
+                    text: "🚀 Open Positions Hub (Mini App)",
+                    web_app: { url: `${config.WEBAPP_URL}/positions` },
+                  },
+                ],
+                [
+                  { text: "🔥 Trending Markets", callback_data: "refresh_trending" },
+                  { text: "🌐 Open Full WebApp", url: `${config.WEBAPP_URL}/positions` },
+                ],
               ],
             },
           }
         );
       }
 
-      let text = `📊 *Your Recent Positions:*\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-      userTrades.forEach((t, i) => {
-        const outcomeTag = t.outcome?.toUpperCase() === "YES" ? "🟢 YES" : "🔴 NO";
-        text += `${i + 1}. ${outcomeTag} • Spent: *${formatUsdc(t.spendUsdc || 0)}* • Shares: *${(t.shares || 0).toFixed(2)}*\n`;
-        text += `   Market ID: \`${t.marketId}\`\n\n`;
+      const enrichedTrades = await Promise.all(
+        userTrades.map(async (t) => {
+          const marketId = t.marketId || "";
+          const market = marketId ? await getMarketById(marketId).catch(() => null) : null;
+          const title = market?.title || (marketId ? `Market #${marketId.slice(0, 12)}` : "Prediction Market");
+          const phase = market?.phase || "primary";
+          const resolvedOutcome = market?.resolvedOutcome as "yes" | "no" | "void" | undefined;
+          const resolutionStatus = market?.resolutionStatus || (phase === "resolved" ? "resolved" : "open");
+          const cutoffAt = market?.cutoffAt;
+
+          const myOutcome = (t.outcome || "yes").toLowerCase() as "yes" | "no";
+          const spendUsdc = Number(t.spendUsdc || 0);
+          const shares = Number(t.shares || spendUsdc * 2);
+
+          let settledBadge = "⏳ In Progress";
+          let statusText = "🔵 Active Position";
+          let isClaimable = false;
+          let claimAmount = 0;
+
+          if (resolutionStatus === "void" || resolvedOutcome === "void") {
+            settledBadge = "⚪ VOID (Canceled)";
+            statusText = `⚪ 100% Refund Ready ($${spendUsdc.toFixed(2)} USDC)`;
+            isClaimable = true;
+            claimAmount = spendUsdc;
+          } else if (resolvedOutcome === "yes" || resolvedOutcome === "no") {
+            const isWinner = myOutcome === resolvedOutcome;
+            settledBadge = resolvedOutcome === "yes" ? "🟢 YES WON" : "🟣 NO WON";
+            if (isWinner) {
+              settledBadge += " • 🏆 WON!";
+              statusText = `🏆 Won ($${shares.toFixed(2)} USDC)`;
+              isClaimable = true;
+              claimAmount = shares;
+            } else {
+              statusText = "🔴 Lost";
+            }
+          } else if (phase === "resolved") {
+            settledBadge = "⚪ Resolved";
+            statusText = "⚪ Finalized";
+          } else if (cutoffAt && isCutoffExpired(cutoffAt)) {
+            settledBadge = "⏳ Trading Closed (Awaiting Resolution)";
+            statusText = "⏳ Awaiting Settlement";
+          }
+
+          return {
+            ...t,
+            title,
+            myOutcome,
+            settledBadge,
+            statusText,
+            isClaimable,
+            claimAmount,
+            shares,
+            spendUsdc,
+          };
+        })
+      );
+
+      let text = [
+        `📊 *YOUR PORTFOLIO & CLAIMS*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      ].join("\n");
+
+      enrichedTrades.forEach((pos, idx) => {
+        const outcomeEmoji = pos.myOutcome === "yes" ? "🟢" : "🔴";
+        text += `\n*${idx + 1}. "${pos.title}"*\n`;
+        text += `• Bet: *${outcomeEmoji} ${pos.myOutcome.toUpperCase()}* • Spent: *$${pos.spendUsdc.toFixed(2)}* (${pos.shares.toFixed(1)} shares)\n`;
+        text += `• Settled: *${pos.settledBadge}*\n`;
+        text += `• Status: *${pos.statusText}*\n`;
       });
+
+      text += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ *Non-custodial settlement on Solana Devnet*`;
+
+      const claimable = enrichedTrades.filter((t) => t.isClaimable);
+      const buttons: any[] = [];
+
+      if (claimable.length > 0) {
+        const topClaim = claimable[0];
+        try {
+          const claimSession = await createClaimSession({
+            platformUserId: userId,
+            platform: "telegram",
+            chatId: String(ctx.chat?.id || ""),
+            marketId: topClaim.marketId || "",
+            estimatedPayoutUsdc: topClaim.claimAmount,
+          });
+
+          const isRefund = topClaim.statusText.includes("Refund");
+          const claimBtnLabel = isRefund
+            ? `💰 Claim 100% Refund ($${topClaim.claimAmount.toFixed(2)} USDC)`
+            : `💰 Claim Payout ($${topClaim.claimAmount.toFixed(2)} USDC)`;
+
+          buttons.push([
+            {
+              text: `⚡ ${claimBtnLabel} (Mini App)`,
+              web_app: { url: claimSession.signUrl },
+            },
+          ]);
+          buttons.push([
+            {
+              text: `🌐 Sign Claim in Browser`,
+              url: claimSession.signUrl,
+            },
+          ]);
+        } catch (claimErr) {
+          console.warn("[Telegram /positions] Failed generating claim session:", claimErr);
+        }
+      }
+
+      buttons.push([
+        {
+          text: "🚀 Open Positions Hub (Mini App)",
+          web_app: { url: `${config.WEBAPP_URL}/positions` },
+        },
+        {
+          text: "🌐 Full WebApp Hub",
+          url: `${config.WEBAPP_URL}/positions`,
+        },
+      ]);
 
       return sendSafeReply(ctx, text, {
         parse_mode: "Markdown",
         reply_markup: {
-          inline_keyboard: [
-            [{ text: "🌐 Open Full Positions Hub", url: `${config.WEBAPP_URL}/positions` }],
-          ],
+          inline_keyboard: buttons,
         },
       });
     } catch (err: any) {

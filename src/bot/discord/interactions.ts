@@ -9,6 +9,7 @@ import {
 } from "discord.js";
 import { getMarketById, getMarketStats, getTrendingMarkets } from "../../api/panta/markets.js";
 import { createTradeSession } from "../../api/panta/trading.js";
+import { createClaimSession } from "../../api/panta/positions.js";
 import { buildDiscordMarketCard, buildDiscordTrendingCard } from "./embeds.js";
 import { getRecentTradesForUser, disputeMarketOutcome } from "../../db/queries.js";
 import { getUserEarnings } from "../../services/graduation-poller.js";
@@ -244,23 +245,128 @@ async function handleEphemeralPositions(interaction: ButtonInteraction): Promise
   if (userTrades.length === 0) {
     await interaction.reply({
       content:
-        `📊 **Your Positions**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `You have no recorded prediction bets yet! Place a bet on any market to get started.`,
+        `📊 **Your Positions & Claims**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `You have no recorded prediction bets yet! Place a bet on any live market or type \`/market\` to launch your own.`,
       components: [row],
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  let text = `📊 **Your Recent Positions:**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  userTrades.forEach((t, i) => {
-    const outcomeTag = t.outcome?.toUpperCase() === "YES" ? "🟢 YES" : "🔴 NO";
-    text += `${i + 1}. ${outcomeTag} • Spent: **${formatUsdc(t.spendUsdc || 0)}** • Shares: **${(t.shares || 0).toFixed(2)}**\n`;
-    text += `   Market ID: \`${t.marketId}\`\n\n`;
+  const enrichedTrades = await Promise.all(
+    userTrades.map(async (t) => {
+      const marketId = t.marketId || "";
+      const market = marketId ? await getMarketById(marketId).catch(() => null) : null;
+      const title = market?.title || (marketId ? `Market #${marketId.slice(0, 12)}` : "Prediction Market");
+      const phase = market?.phase || "primary";
+      const resolvedOutcome = market?.resolvedOutcome as "yes" | "no" | "void" | undefined;
+      const resolutionStatus = market?.resolutionStatus || (phase === "resolved" ? "resolved" : "open");
+      const cutoffAt = market?.cutoffAt;
+
+      const myOutcome = (t.outcome || "yes").toLowerCase() as "yes" | "no";
+      const spendUsdc = Number(t.spendUsdc || 0);
+      const shares = Number(t.shares || spendUsdc * 2);
+
+      let settledBadge = "⏳ In Progress";
+      let statusText = "🔵 Active Position";
+      let isClaimable = false;
+      let claimAmount = 0;
+
+      if (resolutionStatus === "void" || resolvedOutcome === "void") {
+        settledBadge = "⚪ VOID (Canceled)";
+        statusText = `⚪ 100% Refund Ready ($${spendUsdc.toFixed(2)} USDC)`;
+        isClaimable = true;
+        claimAmount = spendUsdc;
+      } else if (resolvedOutcome === "yes" || resolvedOutcome === "no") {
+        const isWinner = myOutcome === resolvedOutcome;
+        settledBadge = resolvedOutcome === "yes" ? "🟢 YES WON" : "🟣 NO WON";
+        if (isWinner) {
+          settledBadge += " • 🏆 WON!";
+          statusText = `🏆 Won ($${shares.toFixed(2)} USDC)`;
+          isClaimable = true;
+          claimAmount = shares;
+        } else {
+          statusText = "🔴 Lost";
+        }
+      } else if (phase === "resolved") {
+        settledBadge = "⚪ Resolved";
+        statusText = "⚪ Finalized";
+      } else if (cutoffAt && isCutoffExpired(cutoffAt)) {
+        settledBadge = "⏳ Trading Closed (Awaiting Resolution)";
+        statusText = "⏳ Awaiting Settlement";
+      }
+
+      return {
+        ...t,
+        title,
+        myOutcome,
+        settledBadge,
+        statusText,
+        isClaimable,
+        claimAmount,
+        shares,
+        spendUsdc,
+      };
+    })
+  );
+
+  const embed = new EmbedBuilder()
+    .setTitle("📊 Your Prediction Portfolio & Claims")
+    .setDescription("Non-custodial positions and claimable payouts on Solana Devnet.")
+    .setColor(0x38bdf8);
+
+  enrichedTrades.forEach((pos, idx) => {
+    const outcomeEmoji = pos.myOutcome === "yes" ? "🟢" : "🔴";
+    embed.addFields({
+      name: `${idx + 1}. ${pos.title.length > 60 ? pos.title.slice(0, 57) + "..." : pos.title}`,
+      value:
+        `• Stance: ${outcomeEmoji} **${pos.myOutcome.toUpperCase()}** • Spent: **$${pos.spendUsdc.toFixed(2)}** (${pos.shares.toFixed(1)} shares)\n` +
+        `• Settled: **${pos.settledBadge}**\n` +
+        `• Status: **${pos.statusText}**`,
+      inline: false,
+    });
   });
 
+  const claimable = enrichedTrades.filter((t) => t.isClaimable);
+  if (claimable.length > 0) {
+    const topClaim = claimable[0];
+    try {
+      const claimSession = await createClaimSession({
+        platformUserId: userId,
+        platform: "discord",
+        chatId: interaction.channelId,
+        marketId: topClaim.marketId || "",
+        estimatedPayoutUsdc: topClaim.claimAmount,
+      });
+
+      const isRefund = topClaim.statusText.includes("Refund");
+      const claimBtnLabel = isRefund
+        ? `💰 Claim 100% Refund ($${topClaim.claimAmount.toFixed(2)} USDC)`
+        : `💰 Claim Payout ($${topClaim.claimAmount.toFixed(2)} USDC)`;
+
+      row.addComponents(
+        new ButtonBuilder()
+          .setLabel(claimBtnLabel)
+          .setStyle(ButtonStyle.Success)
+          .setURL(claimSession.signUrl)
+      );
+    } catch (claimErr) {
+      console.warn("[Discord btn_positions] Failed generating claim session:", claimErr);
+    }
+  }
+
+  const top = enrichedTrades[0];
+  if (top) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`share_pos_btn_${top.marketId}_${top.myOutcome}_${Math.round(top.spendUsdc || 20)}`)
+        .setLabel("📤 Share Top Bet")
+        .setStyle(ButtonStyle.Secondary)
+    );
+  }
+
   await interaction.reply({
-    content: text,
+    embeds: [embed],
     components: [row],
     flags: MessageFlags.Ephemeral,
   });

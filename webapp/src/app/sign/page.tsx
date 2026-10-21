@@ -633,8 +633,15 @@ function SigningFlow() {
         // Staging API returns empty transaction fixture in sandbox test mode.
         // Compile a genuine on-chain Devnet VersionedTransaction via SPL Memo program.
         const memoProgramId = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+        const isClaim =
+          session?.type === "claim" ||
+          session?.type === "claim_creator" ||
+          queryType === "claim" ||
+          sessionId?.startsWith("sess_claim_");
         const actionMemo = isCreateSession
           ? `PantaChat:CreateMarket:${session?.payload?.title || queryTitle || "Market"}`
+          : isClaim
+          ? `PantaChat:Claim:${session?.payload?.marketId || queryMarketId || "Market"}`
           : `PantaChat:Order:${session?.payload?.outcome || queryOutcome}:${activeAmount || session?.payload?.amountUsdc || queryAmount}USDC`;
 
         const memoInstruction = new TransactionInstruction({

@@ -340,29 +340,21 @@ export default function PositionsPage() {
                       <span className="text-[10px] uppercase tracking-wider text-slate-400 bg-[#0b0e14] px-2 py-0.5 rounded border border-[#1e2638]">
                         {pos.category}
                       </span>
-                      {pos.status === "voided" && !pos.isClaimed ? (
-                        <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
-                          ⚪ VOIDED (100% Refund Ready)
+                      {pos.status === "voided" || pos.resolvedOutcome === "void" ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                          ⚪ Settled: VOID (Canceled)
                         </span>
-                      ) : pos.status === "voided" && pos.isClaimed ? (
-                        <span className="text-[11px] font-bold text-slate-400">
-                          ⚪ Refund Claimed ✓
+                      ) : pos.resolvedOutcome === "yes" ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
+                          🟢 Settled: YES WON
                         </span>
-                      ) : isClaimable ? (
-                        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
-                          🏆 Won ($1.00/share)
-                        </span>
-                      ) : pos.status === "won" && pos.isClaimed ? (
-                        <span className="text-[11px] font-bold text-emerald-400">
-                          🟢 Won • Claimed ✓
-                        </span>
-                      ) : pos.status === "lost" ? (
-                        <span className="text-[11px] font-bold text-rose-400/80">
-                          🔴 Lost
+                      ) : pos.resolvedOutcome === "no" ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/30 whitespace-nowrap">
+                          🟣 Settled: NO WON
                         </span>
                       ) : (
-                        <span className="text-[11px] text-sky-400">
-                          🔵 Active
+                        <span className="px-2 py-0.5 rounded text-[10px] font-mono text-sky-400 bg-sky-500/10 border border-sky-500/20 whitespace-nowrap">
+                          ⏳ In Progress
                         </span>
                       )}
                     </div>
@@ -374,7 +366,7 @@ export default function PositionsPage() {
                     {/* Stats Grid */}
                     <div className="grid grid-cols-2 gap-2 p-2.5 rounded-lg bg-[#0b0e14] border border-[#1e2638] text-xs font-mono">
                       <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-500 uppercase">Outcome</span>
+                        <span className="text-[10px] text-slate-500 uppercase">My Stance</span>
                         <span
                           className={`font-bold mt-0.5 ${
                             pos.outcome === "yes" ? "text-[#38bdf8]" : "text-[#c084fc]"
@@ -385,15 +377,46 @@ export default function PositionsPage() {
                       </div>
 
                       <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-500 uppercase">Payout Status</span>
+                        <div className="mt-0.5">
+                          {pos.status === "voided" && !pos.isClaimed ? (
+                            <span className="text-[11px] font-bold text-amber-300">
+                              ⚪ 100% Refund Ready
+                            </span>
+                          ) : pos.status === "voided" && pos.isClaimed ? (
+                            <span className="text-[11px] font-bold text-slate-400">
+                              ⚪ Refund Claimed ✓
+                            </span>
+                          ) : isClaimable ? (
+                            <span className="text-[11px] font-bold text-emerald-400">
+                              🏆 Won ($1.00/share)
+                            </span>
+                          ) : pos.status === "won" && pos.isClaimed ? (
+                            <span className="text-[11px] font-bold text-emerald-400">
+                              🟢 Won • Claimed ✓
+                            </span>
+                          ) : pos.status === "lost" ? (
+                            <span className="text-[11px] font-bold text-rose-400/80">
+                              🔴 Lost
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-sky-400">
+                              🔵 Active
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col pt-1.5 border-t border-[#1e2638]">
                         <span className="text-[10px] text-slate-500 uppercase">Cost / Value</span>
                         <span className="text-white font-medium mt-0.5">
                           ${pos.costUsdc.toFixed(2)} → ${pos.currentValueUsdc.toFixed(2)}
                         </span>
                       </div>
 
-                      <div className="flex flex-col col-span-2 pt-1.5 border-t border-[#1e2638] flex-row justify-between items-center">
-                        <span className="text-[10px] text-slate-500 uppercase">Return (PnL):</span>
-                        <span className={pos.pnlUsdc >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                      <div className="flex flex-col pt-1.5 border-t border-[#1e2638]">
+                        <span className="text-[10px] text-slate-500 uppercase">Return (PnL)</span>
+                        <span className={`mt-0.5 font-bold ${pos.pnlUsdc >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                           {pos.pnlUsdc >= 0 ? "+" : ""}${pos.pnlUsdc.toFixed(2)} ({pos.pnlPercent.toFixed(1)}%)
                         </span>
                       </div>
