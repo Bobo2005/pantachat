@@ -77,6 +77,10 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
 6. **Privacy-Preserving "Brag in Chat":** After confirming an order, users can click `[ 📢 Brag in Chat ]` to send a flex card to the group. Friends can tap `[ Fade NO $5 ]` to take the opposite side with zero wallet doxxing.
 7. **Creator Royalties (`/earnings`):** Market creators track accumulated royalties generated from secondary volume and claim their payouts on-chain.
 8. **Devnet Testing Faucet (`/faucet`):** Risk-free testing with a built-in 0.25 Devnet SOL faucet protected by 24-hour rate limiting and on-chain verification.
+9. **Tamper-Proof Automated AI Oracle (`src/services/ai-oracle.ts`):** Evaluates real-world outcomes at cutoff using deterministic Claude temperature 0.0 with authoritative evidence URLs and a strict $\ge 95\%$ confidence threshold (zero guessing).
+10. **2-Hour Community Challenge Window (`/dispute`):** Proposed outcomes enter a 2-hour dispute window with live proof links; any trader can halt settlement for consensus review.
+11. **100% VOID Refund Safety Net:** Canceled or unresolvable events resolve as VOID, refunding 100% of deposited USDC to both YES and NO holders with zero fee deduction.
+12. **Multi-Surface Parity & 1-Tap Claims:** Seamless consistency across Desktop WebApp, Mobile Web, Telegram Mini App (TMA), Telegram Bot, and Discord Bot, allowing users to view settled results (`🟢 YES WON`, `🟣 NO WON`, `⚪ VOID`) and claim payouts with 1 tap directly inside chat or browser.
 
 ---
 
@@ -89,7 +93,7 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
                                    │
                                    ▼
 ┌────────────────────────────────────────────────────────────────────────┐
-│               Anthropic Claude 3.5 Sonnet AI Drafter                   │
+│               Anthropic Claude Sonnet 5.5 AI Drafter                   │
 │         Standardizes Title, Verification Criteria & Cutoff Date        │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
@@ -103,17 +107,18 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
 ┌──────────────────────────────────┐ ┌───────────────────────────────────┐
 │     Next.js WebApp & TMA         │ │     In-Chat Community Cards       │
 │  Non-Custodial Phantom/Solflare  │ │  Sentiment Bars • /trending       │
-│  Stage 5 Success & Brag Flex UI  │ │  "Fade" Counter-Bets • /earnings  │
+│  1-Tap Winnings & VOID Claims    │ │  "Fade" Counter-Bets • /earnings  │
+│  Evidence Sheet & Dispute Portal │ │  AI Oracle Logs (/oracle, /dispute│
 └──────────────────────────────────┘ └───────────────────────────────────┘
 ```
 
-1. **AI Agent Architecture:** Built a structured prompt pipeline with Anthropic Claude 3.5 Sonnet in `src/ai/drafter.ts` that enforces strict JSON schemas, validates resolution determinism, and flags ambiguous questions before on-chain creation.
-2. **Session Brokering Engine:** Created an ephemeral state broker (`src/api/panta/`) that generates deterministic trade and creation sessions, caching orders in SQLite and syncing with Supabase for cross-platform state.
+1. **AI Agent Architecture:** Built a structured prompt pipeline with Anthropic Claude Sonnet 5.5 in `src/ai/drafter.ts` and `src/services/ai-oracle.ts` enforcing strict schemas, deterministic cutoff resolution at temperature 0.0, and objective source retrieval.
+2. **Session Brokering Engine:** Created an ephemeral state broker (`src/api/panta/`) that generates deterministic trade, creation, and claim sessions (`createClaimSession`), caching orders in SQLite and syncing with Supabase for cross-platform state.
 3. **Panta Protocol Integration:** Connected to Panta's bonding curve endpoints to fetch live quotes (`getPrimaryOrderQuote`), construct transactions (`buildPrimaryOrderTransaction`), report on-chain fills, and poll for secondary AMM graduation.
 4. **Bot Interfaces:**
-   - **Telegram:** Built using `telegraf` with support for group chat commands, in-place message edits (`ctx.editMessageText`) to eliminate chat spam, and deep integration with the Telegram Mini App (TMA).
-   - **Discord:** Built using `discord.js` v14 with full slash command registration, interactive button components, ephemeral responses, and right-click Message Context Menus.
-5. **Next.js Signing Sheet:** Developed a 5-stage stepper in `webapp/src/app/sign/page.tsx` that supports mobile wallet deep links (Phantom, Solflare, MWA), compiles unsigned Versioned Transactions, coordinates wallet signing, and renders the voluntary "Brag in Chat" and "Share on X" actions.
+   - **Telegram:** Built using `telegraf` with support for group chat commands, in-place message edits (`ctx.editMessageText`) to eliminate chat spam, and deep integration with the Telegram Mini App (TMA) for 1-tap betting and claiming.
+   - **Discord:** Built using `discord.js` v14 with full slash command registration, interactive button components, ephemeral responses, right-click Message Context Menus, and rich portfolio embeds with claim buttons.
+5. **Next.js Signing Sheet & Mobile View:** Developed a 5-stage stepper in `webapp/src/app/sign/page.tsx` supporting mobile wallet deep links (Phantom, Solflare, MWA), compiling unsigned Versioned Transactions with SPL Memo action tracking (`PantaChat:Order`, `PantaChat:CreateMarket`, `PantaChat:Claim`), and adapted card views for mobile and TMA screens.
 
 ---
 
@@ -131,13 +136,17 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
 4. **Balancing Social Virality with On-Chain Privacy:**
    - *Problem:* Users wanted to boast about winning predictions without publicly associating their personal wealth with their Telegram or Discord usernames.
    - *Solution:* Designed the voluntary "Brag in Chat" feature, which intentionally strips out raw wallet addresses and direct blockchain transaction hashes, displaying only the user's handle, the market title, and dynamic "Fade" counter-bet buttons.
+5. **Eliminating AI Hallucinations in Market Settlement:**
+   - *Problem:* If an AI oracle guesses or hallucinates an outcome, users lose money unfairly.
+   - *Solution:* Implemented an Evidence-First Engine running at strict temperature 0.0 with a 95% confidence threshold, requiring authoritative source URLs and enforcing a 2-hour community challenge window before final payout execution.
 
 ---
 
 ## Accomplishments that i'm proud of
 
 - **Zero Custodial Risk:** Built a fully functional social trading bot where the platform **never touches, stores, or requests a user's private keys**.
-- **Complete Feature Parity Across 3 Surfaces:** Telegram Bot, Discord Bot, and the Next.js WebApp share the exact same database state, bonding curves, and trade capabilities.
+- **Complete Feature Parity Across All Devices & Surfaces:** Desktop WebApp, Mobile Web, Telegram Mini App (TMA), Telegram Bot, and Discord Bot share identical settled badges (`🟢 YES WON`, `🟣 NO WON`, `⚪ VOID`), payout statuses, and 1-tap claim flows.
+- **Tamper-Proof Automated AI Oracle:** Automated resolution at cutoff with deterministic evidence extraction, 2-hour dispute window, and 100% VOID refund safety net.
 - **Seamless "Reply-to-Market" Workflow:** Users can transform banter into a fully structured prediction market in under 5 seconds with zero manual configuration.
 - **Production-Grade Codebase:** Verified across both root and webapp with **0 TypeScript errors (`tsc --noEmit`)**, robust Zod environment validation, and automated test fixtures.
 - **Incentive Alignment:** Integrated creator fee collection (`/earnings`) that rewards community leaders for creating markets that drive volume.
@@ -148,14 +157,14 @@ PantaChat was born to bridge the gap between social banter and on-chain predicti
 
 - **Solana Transaction Architecture:** Gained deep experience compiling and handling Solana `VersionedTransaction` instances, managing blockhash lifecycles, and orchestrating non-custodial signatures across mobile deep links.
 - **Conversational UI Design:** Learned that the best Web3 interfaces are the ones users don't even realize they're using. Hiding complex AMM curves and bonding curve math behind simple `[ YES $5 ]` and `[ Fade NO $20 ]` buttons dramatically lowers the barrier to entry.
-- **The Power of Intent-Driven AI:** Using Claude 3.5 Sonnet not as a generic chatbot, but as a deterministic translator between natural language debate and structured financial contracts is a massive unlock for decentralized finance.
+- **The Power of Intent-Driven AI:** Using Claude Sonnet 5.5 not as a generic chatbot, but as a deterministic translator between natural language debate and structured financial contracts is a massive unlock for decentralized finance.
 
 ---
 
 ## What's next for PantaChat
 
 1. **Mainnet Launch on Solana:** Transition from Devnet sandbox testing to live Solana Mainnet with real USDC wagering and high-liquidity market graduation.
-2. **AI-Powered Automated Oracle Resolution:** Integrate multi-source LLM consensus and decentralized oracles (Pyth, Switchboard, UMA) to automatically resolve subjective community markets upon cutoff expiry.
+2. **Multi-Source Oracle Consensus (Pyth & Switchboard Integration):** Supplement AI Oracle text verification with programmatic Pyth/Switchboard price feeds for sub-second crypto and equities settlement.
 3. **Group Chat Tournaments & Syndicate Pools:** Allow entire Telegram groups or Discord guilds to pool funds and compete on a collective prediction leaderboard against rival communities.
 4. **Multi-Outcome & Categorical Markets:** Expand beyond binary YES/NO markets to support sports score brackets, election multi-candidate pools, and ranking predictions.
 5. **WhatsApp & Farcaster Integration:** Port the conversational engine to Farcaster Frames and WhatsApp Business API to expand distribution to every corner of social crypto.

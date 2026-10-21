@@ -363,3 +363,57 @@ PantaChat replaces centralized market creator resolution and manual admin keys w
 - **Canceled / Postponed Events (VOID):** If an event is called off or fails resolution criteria, `resolution_status = 'void'`. Both YES and NO depositors receive **100% of their deposited USDC** back with zero protocol fee deduction.
 - **Non-Custodial Claim Settlement:** Claim transactions route through the `/sign` portal to sign a Solana claim transaction, with `isClaimSession` checks bypassing trade cutoff locks.
 
+---
+
+## 10. Multi-Surface Parity & Cross-Client Settlement Architecture
+
+PantaChat enforces architectural and visual parity across all client surfaces: **Desktop WebApp**, **Mobile Web / Telegram Mini App (TMA)**, **Telegram Bot**, and **Discord Bot**.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                 CROSS-CLIENT UNIFIED SETTLEMENT MATRIX                 │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┼───────────────────────────────┐
+    ▼                               ▼                               ▼
+┌─────────────────────────┐   ┌─────────────────────────┐   ┌─────────────────────────┐
+│       Desktop WebApp    │   │      TMA / Mobile Web   │   │  Telegram & Discord Bots│
+│       (/positions)      │   │       (/positions)      │   │       (/positions)      │
+├─────────────────────────┤   ├─────────────────────────┤   ├─────────────────────────┤
+│ • Full Data Table       │   │ • Card-Based Feed       │   │ • In-Chat Formatted Card│
+│ • "Settled Result" col  │   │ • Settled Result Pill   │   │ • Rich Embed Fields     │
+│   (🟢 YES, 🟣 NO, ⚪VOID)│   │   (🟢 YES, 🟣 NO, ⚪VOID)│   │   (🟢 YES, 🟣 NO, ⚪VOID)│
+│ • Live PnL & Shares     │   │ • Payout Status Row     │   │ • Payout Status Label   │
+│ • 1-Tap Claim Button    │   │ • 1-Tap Claim Button    │   │ • 1-Tap Claim Button    │
+└───────────┬─────────────┘   └───────────┬─────────────┘   └───────────┬─────────────┘
+            │                             │                             │
+            └─────────────────────────────┼─────────────────────────────┘
+                                          ▼
+                      ┌────────────────────────────────────────┐
+                      │    Non-Custodial Claim Stepper (/sign) │
+                      │    • Ephemeral Session: sess_claim_... │
+                      │    • Solana Memo: PantaChat:Claim:<id> │
+                      │    • Smart Contract Vault (PDA)        │
+                      │      ──[Burns Shares / Pays USDC]──>   │
+                      │      Winner's Wallet (Phantom/Solflare)│
+                      └────────────────────────────────────────┘
+```
+
+### 10.1 Universal Settled Badges & Payout States
+All platforms compute position settlement deterministically:
+1. **🟢 YES WON:** Market resolved YES. Winning YES shares pay out at $1.00 USDC each.
+2. **🟣 NO WON:** Market resolved NO. Winning NO shares pay out at $1.00 USDC each.
+3. **⚪ VOID (Canceled):** Event canceled or invalidated. Depositors receive a 100% principal USDC refund.
+4. **⏳ In Progress / ⏳ Trading Closed:** Market actively open or trading locked awaiting cutoff AI verification.
+
+### 10.2 Ephemeral Claim Sessions (`createClaimSession`)
+- When a user views their portfolio in Telegram or Discord (`/positions`), the bot asynchronously evaluates whether any holding has claimable winnings or refunds.
+- If claimable, the bot calls `createClaimSession()` (`src/api/panta/positions.ts`) to store an ephemeral session (`sess_claim_...`) with a 10-minute TTL.
+- **Telegram Bot:** Renders an inline button using the Telegram WebApp SDK (`web_app: { url: signUrl }`) opening the TMA sheet without leaving the chat, with an external browser fallback.
+- **Discord Bot:** Renders an interactive `ButtonBuilder` linking directly to `/sign?session=...`.
+
+### 10.3 Hybrid Cloud Synchronization
+- Database lookups in `src/db/queries.ts` (`getMarketById`) automatically query Supabase REST endpoints if a market ID is not found in the local SQLite cache.
+- User handles are matched with or without leading `@` symbols, guaranteeing that positions created via WebApp, TMA, or bots are visible everywhere simultaneously.
+
+
