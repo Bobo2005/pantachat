@@ -80,6 +80,9 @@ interface SessionDetails {
     category?: string;
     yesPrice?: number;
     noPrice?: number;
+    phase?: string;
+    cutoffAt?: string;
+    resolvedOutcome?: string;
   };
   quote?: {
     estimatedShares?: number;
@@ -134,6 +137,19 @@ function SigningFlow() {
   const [txSignature, setTxSignature] = useState<string>("");
   const [isStaleQuote, setIsStaleQuote] = useState<boolean>(false);
   const [duplicateMarket, setDuplicateMarket] = useState<any>(null);
+
+  const isClaim =
+    session?.type === "claim" ||
+    session?.type === "claim_creator" ||
+    isClaimSession;
+  const isCreate =
+    !isClaim && (session?.type === "create" || isCreateSession);
+  const sessionType: "claim" | "claim_creator" | "create" | "buy" =
+    isClaim
+      ? (session?.type === "claim_creator" || queryType === "claim_creator" ? "claim_creator" : "claim")
+      : isCreate
+      ? "create"
+      : "buy";
 
   // Devnet SOL balance & quick faucet claim state
   const [activeAmount, setActiveAmount] = useState<number>(queryAmount || 20);
@@ -466,10 +482,17 @@ function SigningFlow() {
         }
 
         const isClientClaim = queryType === "claim" || sessionId?.startsWith("sess_claim_");
-        if (!isCreateSession && !isClientClaim && matchedMarket && isMarketExpired(matchedMarket.cutoffAt)) {
-          setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
-          setState("error");
-          return;
+        if (!isCreateSession && !isClientClaim && matchedMarket) {
+          if (matchedMarket.phase === "resolved" || matchedMarket.resolvedOutcome) {
+            setErrorMessage("This market has already resolved. Betting is no longer permitted.");
+            setState("error");
+            return;
+          }
+          if (isMarketExpired(matchedMarket.cutoffAt)) {
+            setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
+            setState("error");
+            return;
+          }
         }
 
         const resolvedTitle = matchedMarket?.title || queryTitle || "Prediction Market";
@@ -559,6 +582,21 @@ function SigningFlow() {
       return;
     }
 
+    // Trade Closed & Resolution Guard: ensure betting is never accepted on expired or resolved markets
+    if (!isClaim && !isCreate) {
+      const candidateMarket = session?.market as any;
+      if (candidateMarket?.phase === "resolved" || candidateMarket?.resolvedOutcome) {
+        setErrorMessage("This market has already resolved. Betting is no longer permitted.");
+        setState("error");
+        return;
+      }
+      if (isMarketExpired(candidateMarket?.cutoffAt || (session?.payload as any)?.cutoffAt)) {
+        setErrorMessage("Trading has closed for this market. Betting is no longer permitted while awaiting outcome resolution.");
+        setState("error");
+        return;
+      }
+    }
+
     // Duplicate Launch Guard: prevent signing if already confirmed
     const alreadyConfirmedSig =
       typeof window !== "undefined"
@@ -577,7 +615,7 @@ function SigningFlow() {
       return;
     }
 
-    if (isCreateSession) {
+    if (isCreate) {
       const candidateTitle = session?.payload?.title || queryTitle;
       if (candidateTitle) {
         try {
@@ -634,15 +672,9 @@ function SigningFlow() {
         versionedTx = VersionedTransaction.deserialize(txBytes);
       } else {
         // Panta Staging Sandbox or Backend Fallback:
-        // Staging API returns empty transaction fixture in sandbox test mode.
         // Compile a genuine on-chain Devnet VersionedTransaction via SPL Memo program.
         const memoProgramId = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
-        const isClaim =
-          session?.type === "claim" ||
-          session?.type === "claim_creator" ||
-          queryType === "claim" ||
-          sessionId?.startsWith("sess_claim_");
-        const actionMemo = isCreateSession
+        const actionMemo = isCreate
           ? `PantaChat:CreateMarket:${session?.payload?.title || queryTitle || "Market"}`
           : isClaim
           ? `PantaChat:Claim:${session?.payload?.marketId || queryMarketId || "Market"}`
@@ -717,40 +749,85 @@ function SigningFlow() {
         throw new Error(rpcErr.message || "Failed to broadcast transaction to Solana Devnet RPC.");
       }
 
-      // 2. Persist position to client localStorage for immediate portfolio reflection
+      // 2. Persist position / claim to client localStorage for immediate portfolio reflection
       if (publicKey && finalSig) {
         try {
-          const outcomeLower = ((session?.payload as any)?.outcome || queryOutcome || "yes").toLowerCase();
-          const targetMarket = session?.market || {
-            id: queryMarketId || "mkt_arsenal_chelsea_1790951354",
-            title: session?.payload?.title || queryTitle || "Will Arsenal beat Chelsea in the Premier League on October 18, 2026?",
-            category: session?.payload?.category || queryCategory || "Sports",
-            yesPrice: 0.5,
-            noPrice: 0.5,
-          };
-          const tradeCost = Number(activeAmount || (session?.payload as any)?.amountUsdc || queryAmount || 20);
-          const price = outcomeLower === "yes" ? (targetMarket.yesPrice || 0.5) : (targetMarket.noPrice || 0.5);
-          const estShares = Math.floor(tradeCost / price);
-
           const localPosKey = `panta_positions_${publicKey.toBase58()}`;
           const currentLocal = JSON.parse(localStorage.getItem(localPosKey) || "[]");
-          const newPosEntry = {
-            id: `pos_${Date.now()}`,
-            marketId: targetMarket.id,
-            marketTitle: targetMarket.title,
-            category: targetMarket.category,
-            outcome: outcomeLower as "yes" | "no",
-            shares: estShares,
-            costUsdc: tradeCost,
-            currentValueUsdc: tradeCost,
-            pnlUsdc: 0,
-            pnlPercent: 0,
-            status: "open",
-            isClaimed: false,
-            txSignature: finalSig,
-            createdAt: Date.now(),
-          };
-          localStorage.setItem(localPosKey, JSON.stringify([newPosEntry, ...currentLocal]));
+          const targetMarketId =
+            (session?.payload as any)?.marketId ||
+            session?.market?.id ||
+            queryMarketId ||
+            searchParams.get("market");
+          const targetTitle =
+            session?.payload?.title || session?.market?.title || queryTitle;
+
+          if (isClaim) {
+            // MARK EXISTING POSITION(S) AS CLAIMED (DO NOT ADD A RE-BET POSITION!)
+            const updatedLocal = currentLocal.map((pos: any) => {
+              const matchMarket =
+                (targetMarketId && pos.marketId === targetMarketId) ||
+                (targetTitle &&
+                  pos.marketTitle &&
+                  pos.marketTitle.trim().toLowerCase() === targetTitle.trim().toLowerCase());
+              if (matchMarket && !pos.isClaimed) {
+                return {
+                  ...pos,
+                  isClaimed: true,
+                  status: pos.status === "voided" ? "voided" : "won",
+                  claimTxSignature: finalSig,
+                  claimedAt: Date.now(),
+                };
+              }
+              return pos;
+            });
+            localStorage.setItem(localPosKey, JSON.stringify(updatedLocal));
+
+            // Also call the dedicated claim API route for instant sync
+            if (targetMarketId) {
+              fetch("/api/positions/claim", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  marketId: targetMarketId,
+                  wallet: publicKey.toBase58(),
+                  signature: finalSig,
+                  amount: activeAmount || queryAmount || 0,
+                }),
+              }).catch((cErr) => console.warn("[Claim Sync Warning]:", cErr));
+            }
+          } else {
+            // ONLY persist a new position if this is an actual BUY trade
+            const outcomeLower = ((session?.payload as any)?.outcome || queryOutcome || "yes").toLowerCase();
+            const targetMarket = session?.market || {
+              id: targetMarketId || "mkt_default",
+              title: targetTitle || "Prediction Market",
+              category: session?.payload?.category || queryCategory || "Crypto",
+              yesPrice: 0.5,
+              noPrice: 0.5,
+            };
+            const tradeCost = Number(activeAmount || (session?.payload as any)?.amountUsdc || queryAmount || 20);
+            const price = outcomeLower === "yes" ? (targetMarket.yesPrice || 0.5) : (targetMarket.noPrice || 0.5);
+            const estShares = Math.floor(tradeCost / (price || 0.5));
+
+            const newPosEntry = {
+              id: `pos_${Date.now()}`,
+              marketId: targetMarket.id,
+              marketTitle: targetMarket.title,
+              category: targetMarket.category,
+              outcome: outcomeLower as "yes" | "no",
+              shares: estShares,
+              costUsdc: tradeCost,
+              currentValueUsdc: tradeCost,
+              pnlUsdc: 0,
+              pnlPercent: 0,
+              status: "open",
+              isClaimed: false,
+              txSignature: finalSig,
+              createdAt: Date.now(),
+            };
+            localStorage.setItem(localPosKey, JSON.stringify([newPosEntry, ...currentLocal]));
+          }
         } catch (storageErr) {
           console.warn("[LocalStorage Position Save Warning]:", storageErr);
         }
@@ -761,7 +838,7 @@ function SigningFlow() {
         signature: finalSig,
         signedTx: signedBase64,
         wallet: publicKey.toBase58(),
-        type: sessionType || (isCreateSession ? "create" : "buy"),
+        type: sessionType,
         chatId: (session?.payload as any)?.chatId || queryChatId,
         platform: session?.platform || queryPlatform,
         user: session?.platformUserId || queryCreator,
@@ -821,9 +898,6 @@ function SigningFlow() {
   // ---------------------------------------------------------------------------
   // Render: 5-State Visual Stepper Layout
   // ---------------------------------------------------------------------------
-  const sessionType = session?.type || (isCreateSession ? "create" : isClaimSession ? "claim" : "buy");
-  const isCreate = sessionType === "create";
-  const isClaim = sessionType === "claim" || sessionType === "claim_creator" || isClaimSession;
 
   const displayTitle =
     session?.payload?.title ||

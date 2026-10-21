@@ -263,13 +263,17 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
   try {
     let session = await getSessionById(id);
     if (!session) {
-      if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_")) {
-        const isCreate = id.startsWith("sess_create_") || req.body.type === "create";
+      if (id.startsWith("sess_buy_") || id.startsWith("sess_create_") || id.startsWith("sess_claim_") || id.startsWith("sess_")) {
+        const isClaim = id.startsWith("sess_claim_") || req.body.type === "claim" || req.body.type === "claim_creator";
+        const isCreate = !isClaim && (id.startsWith("sess_create_") || req.body.type === "create");
+        const sessionTypeVal: "claim" | "claim_creator" | "create" | "buy" = isClaim
+          ? (req.body.type === "claim_creator" ? "claim_creator" : "claim")
+          : (isCreate ? "create" : "buy");
         const platformVal: "telegram" | "discord" =
           req.body.platform === "discord" ? "discord" : "telegram";
         session = {
           id,
-          type: isCreate ? "create" : "buy",
+          type: sessionTypeVal,
           marketId: (req.body.marketId || null) as string | null,
           platformUserId: (req.body.user || req.body.creatorPlatformId || "trader") as string | null,
           platform: platformVal,
@@ -454,6 +458,19 @@ app.post("/api/sessions/:id/submit", async (req: Request, res: Response) => {
           console.warn(`[Submit API] Bot confirmation notification warning:`, notifyErr.message);
         });
       }
+    }
+
+    // 3. Post-Confirmation for Claims
+    else if (session.type === "claim" || session.type === "claim_creator") {
+      console.log(`[Submit API] Claim confirmed on Solana for session ${session.id}, sig: ${finalSig}`);
+      await updateSessionStatus(session.id, "confirmed");
+      return res.json({
+        success: true,
+        status: "confirmed",
+        type: session.type,
+        signature: finalSig,
+        explorerUrl: `${config.EXPLORER_URL_PREFIX}/tx/${finalSig}`,
+      });
     }
 
     // Mark session confirmed

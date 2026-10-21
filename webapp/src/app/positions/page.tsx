@@ -186,9 +186,16 @@ export default function PositionsPage() {
   const totalPortfolioValue = positions.reduce((acc, p) => acc + p.currentValueUsdc, 0);
 
   const handleClaim = (marketId: string) => {
+    const marketPositions = positions.filter(
+      (p) => p.marketId === marketId && (p.status === "won" || p.status === "voided") && !p.isClaimed
+    );
     const pos = positions.find((p) => p.marketId === marketId);
     const sessionId = `sess_claim_${Date.now()}`;
-    const claimAmount = pos?.claimableUsdc || pos?.currentValueUsdc || (pos?.status === "voided" ? pos?.costUsdc : pos?.shares) || 20;
+    const totalMarketClaimable = marketPositions.reduce(
+      (acc, p) => acc + (p.claimableUsdc || (p.status === "voided" ? p.costUsdc : p.shares) || 0),
+      0
+    );
+    const claimAmount = totalMarketClaimable > 0 ? totalMarketClaimable : (pos?.claimableUsdc || 20);
     const titleParam = pos?.marketTitle ? `&title=${encodeURIComponent(pos.marketTitle)}` : "";
     const outcomeParam = pos?.outcome ? `&outcome=${pos.outcome}` : "";
     const statusParam = pos?.status === "voided" || pos?.resolvedOutcome === "void" ? "&isVoid=true" : "";

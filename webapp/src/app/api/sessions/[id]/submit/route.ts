@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, isMarketExpired, type LiveMarket } from "@/lib/markets";
+import { addLiveMarket, getAllLiveMarkets, addUserTradeAsync, findDuplicateMarketAsync, isMarketExpired, claimUserPositionsAsync, type LiveMarket } from "@/lib/markets";
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -48,7 +48,11 @@ export async function POST(
     } = body;
 
     const finalSig = signature || `sig_${Date.now()}`;
-    const isTrade = type === "buy" || sessionId.startsWith("sess_buy_");
+    const isClaim =
+      type === "claim" ||
+      type === "claim_creator" ||
+      sessionId.startsWith("sess_claim_");
+    const isTrade = !isClaim && (type === "buy" || sessionId.startsWith("sess_buy_"));
 
     // =========================================================================
     // CASE A: User Executed a Trade (Buy YES or Buy NO)
@@ -215,6 +219,95 @@ export async function POST(
         type: "buy",
         amount: tradeAmount,
         outcome: outcomeUpper,
+        explorerUrl,
+      });
+    }
+
+    // =========================================================================
+    // CASE CLAIM: User Claimed Winnings / Void Refund / Creator Royalties
+    // =========================================================================
+    if (isClaim) {
+      const allMarkets = getAllLiveMarkets();
+      const existingMarket = allMarkets.find(
+        (m) =>
+          m.id === marketId ||
+          (m.title && title && m.title.toLowerCase().trim() === title.toLowerCase().trim())
+      );
+      const targetTitle = existingMarket?.title || title || "Prediction Market";
+      const targetChatId = chatId || existingMarket?.chatId;
+      const claimAmount = Number(amount || 0);
+      const targetMarketId = existingMarket?.id || marketId;
+      const explorerUrl = `https://explorer.solana.com/tx/${finalSig}?cluster=devnet`;
+
+      if (wallet && targetMarketId) {
+        await claimUserPositionsAsync(targetMarketId, wallet, finalSig).catch((err) =>
+          console.warn("[Claim Positions Warning]:", err)
+        );
+      }
+
+      // Dispatch real-time celebratory announcement to Telegram Group Chat
+      if (targetChatId && TELEGRAM_BOT_TOKEN) {
+        try {
+          const traderUser = user || creatorPlatformId || creator || "";
+          const shortWallet = formatShortWallet(wallet);
+          const traderTag = traderUser ? (traderUser.startsWith("@") ? traderUser : `@${traderUser}`) : "";
+          const traderDisplay =
+            traderTag && shortWallet
+              ? `${traderTag} (\`${shortWallet}\`)`
+              : traderTag || (shortWallet ? `\`${shortWallet}\`` : "Winner");
+
+          const claimCardText = [
+            `💰 *PAYOUT CLAIMED ON SOLANA!*`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+            `📈 *Market:* ${targetTitle}`,
+            ``,
+            `👤 *Winner:* ${traderDisplay}`,
+            `💵 *Payout Claimed:* $${claimAmount.toFixed(2)} USDC`,
+            `🔒 *Settlement:* Transferred directly from market vault`,
+            ``,
+            `⛓️ [View On-Chain Tx on Solana Explorer](${explorerUrl})`,
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+          ].join("\n");
+
+          await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: targetChatId,
+              text: claimCardText,
+              parse_mode: "Markdown",
+            }),
+          });
+        } catch (tgErr: any) {
+          console.warn(`[Vercel API] Telegram claim notice warning:`, tgErr.message);
+        }
+      }
+
+      // Dispatch to Discord if platform is Discord
+      if (targetChatId && platform === "discord" && DISCORD_BOT_TOKEN) {
+        try {
+          const shortWallet = formatShortWallet(wallet);
+          await fetch(`https://discord.com/api/v10/channels/${targetChatId}/messages`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              content: `💰 **Payout Claimed on Solana!**\n**${shortWallet}** claimed **$${claimAmount.toFixed(2)} USDC** from **${targetTitle}**!\n${explorerUrl}`,
+            }),
+          });
+        } catch (discordErr: any) {
+          console.warn(`[Vercel API] Discord claim notice warning:`, discordErr.message);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        status: "confirmed",
+        signature: finalSig,
+        type: "claim",
+        amount: claimAmount,
         explorerUrl,
       });
     }

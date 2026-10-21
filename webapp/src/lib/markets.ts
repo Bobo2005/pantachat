@@ -495,4 +495,59 @@ export async function getTrendingMarketsAsync(limit: number = 3): Promise<LiveMa
   }
   return sorted.length > 0 ? sorted : all.slice(0, limit);
 }
+/**
+ * Marks user positions for a market as claimed across Supabase, in-memory, and cloud store.
+ */
+export async function claimUserPositionsAsync(marketId: string, wallet: string, signature: string): Promise<number> {
+  let claimedCount = 0;
+  if (globalThis.__PANTA_TRADES__) {
+    globalThis.__PANTA_TRADES__ = globalThis.__PANTA_TRADES__.map((t: any) => {
+      const matchMarket = t.marketId === marketId || t.market_id === marketId;
+      const matchWallet = !wallet || !t.wallet || t.wallet.toLowerCase().trim() === wallet.toLowerCase().trim();
+      if (matchMarket && matchWallet && !t.isClaimed) {
+        claimedCount++;
+        return {
+          ...t,
+          isClaimed: true,
+          is_claimed: true,
+          claimTxSignature: signature,
+          claimedAt: Date.now(),
+        };
+      }
+      return t;
+    });
+  }
 
+  // Supabase update if configured
+  if (isSupabaseConfigured && supabase) {
+    try {
+      let query = supabase
+        .from("trades")
+        .update({ is_claimed: true, tx_signature: signature })
+        .eq("market_id", marketId);
+      if (wallet) {
+        query = query.eq("wallet_address", wallet);
+      }
+      const { error } = await query;
+      if (error) {
+        console.warn("[Supabase Claim Position Error]:", error.message);
+      }
+    } catch (sbErr) {
+      console.warn("[Supabase Claim Position Error]:", sbErr);
+    }
+  }
+
+  // Cloud backup update
+  try {
+    fetch(`https://api.restful-api.dev/objects/${CLOUD_TRADES_ID}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "PantaChat_User_Trades",
+        data: { trades: globalThis.__PANTA_TRADES__ || [] },
+      }),
+    }).catch(() => {});
+  } catch {}
+
+  return claimedCount;
+}

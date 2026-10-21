@@ -20,7 +20,10 @@ export async function GET(
     const queryTitle = searchParams.get("title") || "";
     const queryCategory = searchParams.get("category") || "";
 
-    const isCreate = sessionId.startsWith("sess_create_") || searchParams.get("type") === "create";
+    const queryType = searchParams.get("type");
+    const isClaim = sessionId.startsWith("sess_claim_") || queryType === "claim" || queryType === "claim_creator";
+    const isCreate = !isClaim && (sessionId.startsWith("sess_create_") || queryType === "create");
+    const sessionType = isClaim ? (queryType === "claim_creator" ? "claim_creator" : "claim") : (isCreate ? "create" : "buy");
 
     // Deduplication Guard: Check Supabase whether this market question already exists
     if (isCreate && queryTitle) {
@@ -60,7 +63,7 @@ export async function GET(
     return NextResponse.json({
       session: {
         id: sessionId,
-        type: isCreate ? "create" : "buy",
+        type: sessionType,
         status: "pending",
         expiresAt: Math.floor(Date.now() / 1000) + 600,
       },
