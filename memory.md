@@ -159,3 +159,27 @@ Orders must strictly follow:
 * **VOID Canceled Markets:** Returns **100% of deposited USDC** to both YES and NO holders with zero fee deduction.
 * **Signing Session Bypass:** `/sign` explicitly allows claim/refund sessions (`isClaimSession`) to execute past market cutoff without being blocked by trade closure guards.
 
+---
+
+## 8. Multi-Surface Parity Invariants (WebApp, TMA, Telegram Bot, Discord Bot)
+
+### 1. Consistent Settled Outcome Badges Across All Surfaces
+Every prediction market position display across all client surfaces must render identical outcome semantics:
+* `🟢 YES WON`: Market resolved YES. Winning YES shares pay out at $1.00 USDC each.
+* `🟣 NO WON`: Market resolved NO. Winning NO shares pay out at $1.00 USDC each.
+* `⚪ VOID (Canceled)`: Event canceled or unresolvable. 100% principal USDC refunded.
+* `⏳ In Progress` / `⏳ Trading Closed`: Market either actively trading or awaiting AI Oracle cutoff evaluation.
+
+### 2. Universal 1-Tap Claim Experience
+* **Telegram Bot (`/positions`):**
+  * Displays user's recent bets with market titles, bet stance, settled badge, and status.
+  * If user holds winning or refundable shares, generates an ephemeral claim session (`sess_claim_...`) and presents a direct 1-tap button: `⚡ 💰 Claim Payout ($X.XX USDC) (Mini App)` that opens inside Telegram via WebApp SDK, plus a fallback external browser link.
+* **Discord Bot (`/positions` & `btn_positions`):**
+  * Renders an interactive `EmbedBuilder` listing each position with full title, stance, settled result badge, and status.
+  * Dynamically attaches a `💰 Claim Payout ($X.XX USDC)` button directing the user to `/sign?session=...`.
+* **Telegram Mini App & Mobile WebApp (`/positions`):**
+  * Mobile card view displays category, settled result pill (`🟢 Settled: YES WON`, `🟣 Settled: NO WON`, `⚪ Settled: VOID`), stance, cost vs. value, PnL, and payout status.
+  * Immediate 1-tap `💰 Claim Winnings` or `💰 Claim 100% Refund` action button.
+* **Desktop WebApp (`/positions`):**
+  * Data table provides the dedicated `Settled Result` column with corresponding claim buttons.
+
