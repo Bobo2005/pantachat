@@ -86,6 +86,32 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 5. **Security & Deployment Hygiene**:
    - Clean git state with strictly ignored `.env` and `.env.local`.
    - Vercel-ready WebApp and Render-ready bot/backend.
+6. **Immediate Trading Cutoff Protection**:
+   - The second `Date.now() > cutoffAt`, betting is immediately disabled across WebApp and Bots.
+   - Quick Buy modal displays `⏳ Trading Closed` and disables confirmation.
+   - WebApp Submit API (`/api/sessions/[id]/submit`) rejects any buy attempts with 400 `MARKET_CLOSED`.
+   - Telegram & Discord bots display `⏳ Trading Closed (Awaiting Resolution)` badge, removing buy buttons or replacing them with details/closed tags.
+   - Stale callback buttons from past messages reject trading with `"❌ Trading has ended for this market."`.
+7. **Evidence-First AI Oracle Engine (Phase 1)**:
+   - Database schema lifecycle columns: `resolution_status` (`'open'`, `'closed'`, `'proposed'`, `'resolved'`, `'disputed'`, `'void'`), `proposed_outcome`, `dispute_until`, `evidence_url`, `evidence_summary`, `confidence_score`, `dispute_count`, and `dispute_reason`.
+   - Deterministic AI verification engine (`src/services/ai-oracle.ts`) with strict temperature 0.0, extraction of official sources, and Zod structured output schema.
+   - Strict 95% confidence threshold: if confidence < 0.95 or event has not finished, markets remain unconfirmed with zero guessing.
+8. **Automated Resolution Poller & 2-Hour Challenge Window (Phase 2)**:
+   - Background poller (`src/services/resolution-poller.ts`) running every 60 seconds:
+     - Detects expired markets (`cutoffAt <= now` and status `open`/`closed`).
+     - Triggers deterministic AI verification.
+     - Sets `resolution_status = 'proposed'`, sets `proposed_outcome`, and starts 2-hour dispute window (`dispute_until = now + 7200`).
+     - Broadcasts Proposed Resolution cards with evidence links to Telegram and Discord.
+   - Community dispute commands: `/dispute <market_id> <reason>` in Telegram and Discord halts auto-settlement for manual verification.
+   - Undisputed markets auto-settle after 2 hours with real-time winner alerts.
+9. **Automated Payout Settlement, VOID Refunds & UI/UX (Phase 3)**:
+   - **Explorer Grid (`/`)**: Displays amber badge `⏳ PROPOSED: YES WON (2h Challenge)` and opens an interactive **Evidence Sheet Modal** showing official evidence URL, exact match score/price proof, AI confidence score, and 2-hour dispute countdown.
+   - **Positions Hub (`/positions`)**:
+     - Winning positions (`Status: WON`) evaluated at $1.00 USDC per share with active `Claim Winnings` button.
+     - Canceled events (`Status: VOIDED`): 100% refund safety net returning 100% of deposited USDC with `Claim 100% Refund` button.
+   - **Signing Session (`/sign`)**: Allows claim and refund withdrawals on expired/resolved markets without trade closure blockage.
+   - **Bot Transparency Commands**: `/oracle <market_id>` in Telegram and Discord displaying AI Oracle verification log, confidence score, source URL button, timestamps, and dispute status.
+   - **Test Suite Verification**: Verified with `scripts/test_phase1_oracle.ts`, `scripts/test_phase2_resolution_pipeline.ts`, and `scripts/test_phase3_settlement_and_oracle.ts` (100% passing, 0 TypeScript compilation errors).
 
 ---
 
@@ -120,6 +146,22 @@ npm run dev
 npm run register:discord
 ```
 *(If `DISCORD_GUILD_ID` is set in `.env`, commands sync to that test guild instantly. Otherwise, Discord takes 5-15 mins to propagate globally).*
+
+### 4. Run Automated Test Suites
+```bash
+# Test Phase 1: Database Schema & AI Oracle Verification Engine
+npx tsx scripts/test_phase1_oracle.ts
+
+# Test Phase 2: Automated Resolution Poller & 2-Hour Dispute Window
+npx tsx scripts/test_phase2_resolution_pipeline.ts
+
+# Test Phase 3: Payout Settlement, 100% VOID Refunds & Bot /oracle Commands
+npx tsx scripts/test_phase3_settlement_and_oracle.ts
+
+# Full TypeScript check (Zero compilation errors)
+npx tsc --noEmit
+npm --prefix webapp run build
+```
 
 ---
 

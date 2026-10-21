@@ -90,6 +90,17 @@ PantaChat is not just a text bot; it features **three integrated UI surfaces**:
    - Full slash command set (`/market`, `/bet`, `/positions`, `/earnings`, `/leaderboard`, `/faucet`) plus message context menus. Instant server registration via `npm run register:discord` (`DISCORD_GUILD_ID`).
 7. **Brand Assets & Avatar Catalog:**
    - White-background and dark-mode high-res avatars (`panta-logo-white.png`, `.jpg`, `.webp`, `.gif`, `.svg`) formatted for Discord profiles, bots, and socials.
+8. **Immediate Trading Cutoff Protection:**
+   - The second `Date.now() > cutoffAt`, all betting locks automatically across WebApp Quick-Buy and Bot cards with 400 `MARKET_CLOSED` guards, preventing late insider trading.
+9. **Tamper-Proof AI Oracle & 2-Hour Challenge Window (Phases 1 & 2):**
+   - Deterministic verification engine (Claude temperature 0.0, $\ge 95\%$ confidence threshold) fetching official resolution URLs with zero creator manipulation.
+   - 60-second automated resolution poller (`resolution-poller.ts`) broadcasting proposed outcomes to Telegram & Discord with 2-hour dispute timers and `/dispute` community challenge halts.
+10. **Automated Payout Settlement, VOID Refunds & Transparency (Phase 3):**
+    - Non-custodial payout settlement valued at strictly **$1.00 USDC per winning share**.
+    - **100% VOID Refund Safety Net**: Canceled/postponed events return 100% of deposited USDC to both YES and NO holders with zero fee deduction.
+    - WebApp Evidence Sheet modal on Explorer Grid (`/`) with authoritative source links and live dispute countdown.
+    - Bot transparency commands: `/oracle <market_id>` in Telegram and Discord displaying verification logs, confidence scores, and timestamps.
+    - Verified with integration test suites (`test_phase1_oracle.ts`, `test_phase2_resolution_pipeline.ts`, `test_phase3_settlement_and_oracle.ts`).
 
 ---
 

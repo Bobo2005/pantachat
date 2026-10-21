@@ -289,3 +289,77 @@ PantaChat provides standardized brand visual assets in `assets/` and `webapp/pub
 - **`panta-logo-white.png`**: High-resolution 1024x1024 white-background avatar optimized for Discord Bot Profile pictures and light theme cards.
 - **`panta-logo-white.jpg`**, **`panta-logo-white.webp`**, **`panta-logo-white.gif`**, and **`panta-logo-white.svg`**: Multi-format exports under 10MB meeting Discord, Telegram, and OpenGraph requirements.
 - **`panta-logo-black.svg`**: Dark-mode vector for headers and high-contrast night modes.
+
+---
+
+## 9. Tamper-Proof Automated AI Oracle & Resolution Engine
+
+PantaChat replaces centralized market creator resolution and manual admin keys with an objective, decentralized verification pipeline.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│               PANTACHAT AI ORACLE & RESOLUTION PIPELINE                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    1. Cutoff Timestamp Passes      │ (Date.now() >= cutoffAt)
+                                    ▼
+       ┌────────────────────────────────────────────────────────┐
+       │   Trading Lockout: resolution_status = 'closed'       │
+       │   • Quick-Buy disabled on WebApp                       │
+       │   • Submit API rejects with 400 MARKET_CLOSED          │
+       │   • Telegram & Discord switch to "Trading Closed" card │
+       └────────────────────────────┬───────────────────────────┘
+                                    │
+    2. Background Poller (60s)      │ (src/services/resolution-poller.ts)
+                                    ▼
+       ┌────────────────────────────────────────────────────────┐
+       │   Evidence-First AI Engine (src/services/ai-oracle.ts) │
+       │   • Extracts official resolution source from rules     │
+       │   • Fetches live factual data / scores / closing price │
+       │   • Strict temperature 0.0 deterministic evaluation    │
+       │   • Threshold: >= 95% confidence + finished event      │
+       └────────────────────────────┬───────────────────────────┘
+                                    │
+                                    ├─── Confidence < 95% or Event Ongoing
+                                    │    └── Remains in 'closed' (awaiting official confirmation)
+                                    │
+                                    └─── Confidence >= 95%
+                                         ▼
+       ┌────────────────────────────────────────────────────────┐
+       │   Status Transitions to: 'proposed'                    │
+       │   • Sets proposed_outcome = 'yes' | 'no' | 'void'      │
+       │   • Starts 2-hour dispute window: dispute_until = +2h  │
+       │   • Saves evidence_url, evidence_summary, confidence   │
+       │   • Broadcasts Proposed Resolution Card to Chat        │
+       └────────────────────────────┬───────────────────────────┘
+                                    │
+           ┌────────────────────────┴────────────────────────┐
+           │                                                 │
+    Trader Disputes Outcome                           2 Hours Pass
+    (/dispute <id> <reason>)                          With 0 Disputes
+           │                                                 │
+           ▼                                                 ▼
+┌──────────────────────────────────────┐     ┌──────────────────────────────────────┐
+│ Status: 'disputed'                   │     │ Status: 'resolved'                   │
+│ • Auto-finalization halted           │     │ • Sets phase = 'resolved'            │
+│ • Flags for consensus review         │     │ • Evaluates winners @ $1.00/share    │
+│ • Increments dispute_count           │     │ • VOID events refund 100% principal  │
+│ • Logged in /oracle inspection       │     │ • Dispatches Winner / Refund Alerts  │
+└──────────────────────────────────────┘     └──────────────────────────────────────┘
+```
+
+### 9.1 Evidence-First Verification Engine (`src/services/ai-oracle.ts`)
+- **Deterministic Consensus (Temp 0.0):** No creative temperature; outputs are strictly verifiable factual statements.
+- **Authoritative Source Retrieval:** Resolution rules specify official sources (e.g. `premierleague.com`, `coingecko.com`, SEC filings).
+- **Zero-Guessing Guard:** If confidence is below 95% or the event is incomplete, the engine returns `unresolved`, keeping the market in awaiting confirmation without forcing a result.
+
+### 9.2 2-Hour Challenge Window & Community Dispute Mechanism
+- Proposed outcomes are broadcast to community chats with direct links to the official evidence URL.
+- Any participant can challenge a proposed outcome using `/dispute <market_id> <reason>` in Telegram or Discord.
+- Raising a dispute transitions the market to `resolution_status = 'disputed'`, freezing automated finalization until consensus review.
+
+### 9.3 Payout Economics & 100% VOID Refund Safety Net
+- **Winning Positions:** Payout is calculated at strictly **$1.00 USDC per share**. Net profit = $\text{shares} \times \$1.00 - \text{costUsdc}$.
+- **Canceled / Postponed Events (VOID):** If an event is called off or fails resolution criteria, `resolution_status = 'void'`. Both YES and NO depositors receive **100% of their deposited USDC** back with zero protocol fee deduction.
+- **Non-Custodial Claim Settlement:** Claim transactions route through the `/sign` portal to sign a Solana claim transaction, with `isClaimSession` checks bypassing trade cutoff locks.
+

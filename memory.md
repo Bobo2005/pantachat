@@ -107,6 +107,7 @@ Orders must strictly follow:
 | `QUOTE_STALE` | Price shifted on bonding curve during user signing delay | Mini App automatically fetches fresh quote and updates stepper with 1-tap re-sign |
 | `RATE_LIMIT_EXCEEDED` | Exceeded 20/min build or 120/min read | Request queued in Bottleneck rate limiter with exponential backoff (jitter) |
 | `MARKET_NOT_GRADUATED` | Called creator fee claim before secondary phase | UI disables button and displays progress bar: `Liquidity: $X / $10,000 to Graduation` |
+| `MARKET_CLOSED` | Attempted buy order after cutoff timestamp | UI disables Quick-Buy and submit API rejects with 400 MARKET_CLOSED |
 | `TX_NOT_FOUND` | Reported trade to `/trades/` before RPC confirmed | Verify poller awaits Solana RPC commitment `confirmed` before calling `/trades/` |
 | `INVALID_CUTOFF` | Market resolution date is in past or <30m | AI Drafter validates `cutoffAt > Date.now() + 30 * 60 * 1000` before calling create quote |
 
@@ -131,3 +132,30 @@ Orders must strictly follow:
 ### 3. Custom Amount Dynamic Instruction Invariant
 * When a user changes the bet amount on `/sign`, the frontend must recalculate `estimatedShares` and re-derive the Panta instruction set / SPL Memo.
 * The backend trade session must reflect the updated `spendUsdc` before the user signs, ensuring the Solana transaction parameters match what is submitted to `POST /trades/`.
+
+---
+
+## 7. AI Oracle Resolution & Settlement Invariants
+
+### 1. Cutoff Lockout Invariant
+* **Strict Trade Rejection:** The exact millisecond `Date.now() > cutoffAt`, all trading is locked.
+* WebApp Quick-Buy is disabled with `⏳ Trading Closed`.
+* Submit API rejects any buy order with `400 MARKET_CLOSED`.
+* Bots switch card badges from `🟢 Live Primary Curve` to `⏳ Trading Closed (Awaiting Resolution)`.
+* Past message callback button taps reject with `"❌ Trading has ended for this market."`.
+
+### 2. Deterministic AI Verification Invariant
+* AI Oracle runs with strict **temperature 0.0**.
+* Resolution criteria extracts official authority URLs (e.g. Premier League, CoinGecko, official SEC filings).
+* **Strict 95% Confidence Guard:** If confidence < 0.95 or the event has not finished, the engine returns `unresolved`. The market remains in `closed` status with ZERO guessing.
+
+### 3. 2-Hour Dispute Window Invariant
+* Proposed outcomes enter a mandatory 2-hour challenge period (`dispute_until = now + 7200`).
+* Traders can trigger `/dispute <market_id> <reason>` in Telegram or Discord.
+* A single dispute immediately transitions `resolution_status = 'disputed'`, halting automated settlement for manual consensus review.
+
+### 4. Non-Custodial Payout & 100% VOID Refund Invariant
+* **Winning Markets:** Payout is calculated at strictly **$1.00 USDC per winning share**.
+* **VOID Canceled Markets:** Returns **100% of deposited USDC** to both YES and NO holders with zero fee deduction.
+* **Signing Session Bypass:** `/sign` explicitly allows claim/refund sessions (`isClaimSession`) to execute past market cutoff without being blocked by trade closure guards.
+

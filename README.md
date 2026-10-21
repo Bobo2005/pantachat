@@ -15,7 +15,11 @@ PantaChat turns any group chat or direct message into a full prediction market t
 - 💧 **Frictionless Demo Funds Faucet**: Instant Devnet SOL transfers directly to user wallets without requiring third-party OAuth/GitHub connections, backed by 24h rate-limiting and cross-bot confirmation alerts.
 - 📜 **Soft Archiving (Market History)**: When a market resolves, it automatically transitions from the active explorer into the "Past / History" tab, keeping user positions and winnings claimable indefinitely.
 - 📱 **Responsive Multi-Screen Experience**: Native-feeling UI across Desktop, Tablets, Mobile Web, and Telegram Mini Apps (TMA) with a fixed mobile bottom navigation bar and mobile-first card views.
-- 📈 **Bonding Curve Liquidity**: Instant buying and selling via automated bonding curve pricing with slippage safeguards.
+- 🔮 **Tamper-Proof Automated AI Oracle**: Deterministic real-world verification (Claude temperature 0.0, $\ge 95\%$ confidence threshold) evaluating official sources (e.g. Premier League, CoinGecko, official match reports) with zero creator manipulation.
+- ⏳ **2-Hour Challenge Window & Dispute Safety**: Proposed outcomes enter a 2-hour dispute window with live proof URLs; traders can challenge discrepancies with `/dispute` to halt auto-settlement.
+- 💰 **100% VOID Principal Refund Safety Net**: If an event is canceled or postponed indefinitely, markets resolve as VOID and both YES and NO holders can claim 100% of their deposited USDC back with zero loss.
+- 📈 **Bonding Curve Liquidity & Cutoff Locks**: Instant buying and selling via automated bonding curve pricing. Betting automatically locks the second `cutoffAt` is reached to prevent late insider betting.
+- 🏆 **$1.00 Payout Settlement**: Winning traders receive non-custodial payouts valued at strictly $1.00 USDC per winning share.
 - 💰 **Creator Royalties & Rewards**: Market creators earn a percentage of all trading volume generated on their markets, claimable on-demand.
 - 💬 **Multi-Platform Parity**: Full feature parity across **Telegram Bot**, **Discord Bot**, and **Next.js WebApp**.
 
@@ -35,6 +39,7 @@ While prediction market tools and Telegram bots exist, **no other project provid
 | **Discord Multi-Platform Parity** | ✅ **Slash + Right-Click App** | ❌ Telegram only | ⚠️ Discord only (Read-only) | ❌ Web dashboard |
 | **Flexible Custom Bet Sizes** | ✅ **Arbitrary Amount ($1–$10k+)** | ⚠️ Limited presets | ❌ | ⚠️ Fixed lot sizes |
 | **Creator Royalties (`/earnings`)** | ✅ **Claim on-chain protocol fees** | ❌ | ❌ | ❌ |
+| **Automated AI Oracle & Resolution** | ✅ **Evidence-First + 2h Dispute + 100% VOID Refund** | ⚠️ Centralized UMA relay | ❌ None | ❌ None |
 | **Full Lifecycle Support** | ✅ **Draft $\to$ Trade $\to$ Claim** | ⚠️ Trading only | ❌ Informational only | ⚠️ Copy-trading only |
 
 ### 🛡️ PantaChat's Core Moats
@@ -84,9 +89,11 @@ pantachat/
 | `/bet <id> <yes\|no> <amount>` | Place a custom amount bet on any market (e.g. `/bet mkt_abc yes 75`) |
 | `/bet <yes\|no> <amount>` | Reply directly to any in-chat market card to bet instantly (e.g. `/bet yes 50`) |
 | `/faucet [wallet]` | Request test Devnet SOL directly to your wallet (24h cooldown) |
-| `/positions` | Check open positions, PnL, and claimable winnings |
+| `/positions` | Check open positions, PnL, and claimable winnings ($1.00/share or 100% VOID refunds) |
 | `/earnings` | Check creator royalties & claim graduated fees |
 | `/leaderboard` | Top community predictors by trading volume and trades |
+| `/oracle <id>` | Inspect AI Oracle verification log, confidence score, source URL proof, and dispute status |
+| `/dispute <id> <reason>` | Challenge a proposed market outcome within the 2-hour challenge window |
 | `/help` | Detailed command guide and how prediction markets work |
 
 ### Discord Slash Commands
@@ -97,6 +104,8 @@ pantachat/
 | `/positions` | View your active prediction bets and claimable payouts (ephemeral / private) |
 | `/earnings` | Check your creator royalties and graduation status |
 | `/leaderboard` | View top community predictors by trading volume |
+| `/oracle market_id:<id>` | View AI Oracle verification log, official evidence link, confidence score & dispute status |
+| `/dispute market_id:<id> [reason:<text>]` | Dispute a proposed market outcome within the 2-hour challenge window |
 | `/faucet wallet:<address>` | Request Devnet SOL for testing (strictly 1 claim per 24 hours) |
 | **Right Click Message $\to$ Apps $\to$ "Make a prediction market"** | Converts any message in your server into an on-chain prediction market draft |
 
