@@ -95,24 +95,34 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
         amountUsdc: amount,
       });
 
+      const isPrivate = ctx.chat?.type === "private";
       const messageText =
         `🎯 *Ready to place bet:* $${amount} on *${outcome.toUpperCase()}*\n` +
         `Tap below to sign non-custodially in Phantom without leaving Telegram:`;
       const replyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: `⚡ Sign $${amount} ${outcome.toUpperCase()} (Mini App)`,
-              web_app: { url: session.signUrl },
-            },
-          ],
-          [
-            {
-              text: "🌐 Open in External Browser",
-              url: session.signUrl,
-            },
-          ],
-        ],
+        inline_keyboard: isPrivate
+          ? [
+              [
+                {
+                  text: `⚡ Sign $${amount} ${outcome.toUpperCase()} (Mini App)`,
+                  web_app: { url: session.signUrl },
+                },
+              ],
+              [
+                {
+                  text: "🌐 Open in External Browser",
+                  url: session.signUrl,
+                },
+              ],
+            ]
+          : [
+              [
+                {
+                  text: `⚡ Sign $${amount} ${outcome.toUpperCase()} in Phantom`,
+                  url: session.signUrl,
+                },
+              ],
+            ],
       };
 
       if (ctx.chat?.id) {
@@ -174,6 +184,9 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
         amountUsdc: 10,
       });
 
+      const isPrivate = ctx.chat?.type === "private";
+      const customSignUrl = `${config.WEBAPP_URL}/sign?session=${session.sessionId}&custom=true`;
+
       await ctx.answerCbQuery("Opening custom order slider...").catch(() => {});
 
       await ctx.reply(
@@ -182,14 +195,29 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
         {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "⚡ Open Custom Bet Sheet",
-                  web_app: { url: `${config.WEBAPP_URL}/sign?session=${session.sessionId}&custom=true` },
-                },
-              ],
-            ],
+            inline_keyboard: isPrivate
+              ? [
+                  [
+                    {
+                      text: "⚡ Open Custom Bet Sheet",
+                      web_app: { url: customSignUrl },
+                    },
+                  ],
+                  [
+                    {
+                      text: "🌐 Open in External Browser",
+                      url: customSignUrl,
+                    },
+                  ],
+                ]
+              : [
+                  [
+                    {
+                      text: "⚡ Open Custom Bet Sheet in Phantom",
+                      url: customSignUrl,
+                    },
+                  ],
+                ],
           },
         }
       );
@@ -222,26 +250,37 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
       const signUrl = `${config.WEBAPP_URL}/sign?session=${session.id}`;
       await ctx.answerCbQuery("Opening market creation signing sheet...").catch(() => {});
 
+      const isPrivate = ctx.chat?.type === "private";
+
       await ctx.reply(
         `🚀 *Confirm Market Creation (50 USDC Fee)*\n` +
           `Review market rules and sign on Solana Devnet:`,
         {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "⚡ Sign Creation in Phantom",
-                  web_app: { url: signUrl },
-                },
-              ],
-              [
-                {
-                  text: "🌐 Open in External Browser",
-                  url: signUrl,
-                },
-              ],
-            ],
+            inline_keyboard: isPrivate
+              ? [
+                  [
+                    {
+                      text: "⚡ Sign Creation in Phantom",
+                      web_app: { url: signUrl },
+                    },
+                  ],
+                  [
+                    {
+                      text: "🌐 Open in External Browser",
+                      url: signUrl,
+                    },
+                  ],
+                ]
+              : [
+                  [
+                    {
+                      text: "⚡ Sign Creation in Phantom",
+                      url: signUrl,
+                    },
+                  ],
+                ],
           },
         }
       );

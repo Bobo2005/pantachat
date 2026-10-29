@@ -440,6 +440,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
       });
 
       const signUrl = `${session.signUrl}&custom=true`;
+      const isPrivate = ctx.chat?.type === "private";
 
       return sendSafeReply(
         ctx,
@@ -449,20 +450,29 @@ export function registerTelegramCommands(bot: Telegraf): void {
         {
           parse_mode: "Markdown",
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: `⚡ Sign ${amount} ${outcome.toUpperCase()} (Mini App)`,
-                  web_app: { url: signUrl },
-                },
-              ],
-              [
-                {
-                  text: "🌐 Open in External Browser",
-                  url: signUrl,
-                },
-              ],
-            ],
+            inline_keyboard: isPrivate
+              ? [
+                  [
+                    {
+                      text: `⚡ Sign ${amount} ${outcome.toUpperCase()} (Mini App)`,
+                      web_app: { url: signUrl },
+                    },
+                  ],
+                  [
+                    {
+                      text: "🌐 Open in External Browser",
+                      url: signUrl,
+                    },
+                  ],
+                ]
+              : [
+                  [
+                    {
+                      text: `⚡ Sign ${amount} ${outcome.toUpperCase()} in Phantom`,
+                      url: signUrl,
+                    },
+                  ],
+                ],
           },
         }
       );
@@ -482,6 +492,7 @@ export function registerTelegramCommands(bot: Telegraf): void {
     ctx.sendChatAction("typing").catch(() => {});
     try {
       const userId = ctx.from?.username || String(ctx.from?.id || "");
+      const isPrivate = ctx.chat?.type === "private";
       const userTrades = await getRecentTradesForUser(userId, 5);
 
       if (userTrades.length === 0) {
@@ -503,10 +514,15 @@ export function registerTelegramCommands(bot: Telegraf): void {
             reply_markup: {
               inline_keyboard: [
                 [
-                  {
-                    text: "🚀 Open Positions Hub (Mini App)",
-                    web_app: { url: `${config.WEBAPP_URL}/positions` },
-                  },
+                  isPrivate
+                    ? {
+                        text: "🚀 Open Positions Hub (Mini App)",
+                        web_app: { url: `${config.WEBAPP_URL}/positions` },
+                      }
+                    : {
+                        text: "🚀 Open Positions Hub in Browser",
+                        url: `${config.WEBAPP_URL}/positions`,
+                      },
                 ],
                 [
                   { text: "🔥 Trending Markets", callback_data: "refresh_trending" },
@@ -609,28 +625,42 @@ export function registerTelegramCommands(bot: Telegraf): void {
             ? `💰 Claim 100% Refund ($${topClaim.claimAmount.toFixed(2)} USDC)`
             : `💰 Claim Payout ($${topClaim.claimAmount.toFixed(2)} USDC)`;
 
-          buttons.push([
-            {
-              text: `⚡ ${claimBtnLabel} (Mini App)`,
-              web_app: { url: claimSession.signUrl },
-            },
-          ]);
-          buttons.push([
-            {
-              text: `🌐 Sign Claim in Browser`,
-              url: claimSession.signUrl,
-            },
-          ]);
+          if (isPrivate) {
+            buttons.push([
+              {
+                text: `⚡ ${claimBtnLabel} (Mini App)`,
+                web_app: { url: claimSession.signUrl },
+              },
+            ]);
+            buttons.push([
+              {
+                text: `🌐 Sign Claim in Browser`,
+                url: claimSession.signUrl,
+              },
+            ]);
+          } else {
+            buttons.push([
+              {
+                text: `⚡ ${claimBtnLabel} in Phantom`,
+                url: claimSession.signUrl,
+              },
+            ]);
+          }
         } catch (claimErr) {
           console.warn("[Telegram /positions] Failed generating claim session:", claimErr);
         }
       }
 
       buttons.push([
-        {
-          text: "🚀 Open Positions Hub (Mini App)",
-          web_app: { url: `${config.WEBAPP_URL}/positions` },
-        },
+        isPrivate
+          ? {
+              text: "🚀 Open Positions Hub (Mini App)",
+              web_app: { url: `${config.WEBAPP_URL}/positions` },
+            }
+          : {
+              text: "🚀 Open Positions Hub in Browser",
+              url: `${config.WEBAPP_URL}/positions`,
+            },
         {
           text: "🌐 Full WebApp Hub",
           url: `${config.WEBAPP_URL}/positions`,
