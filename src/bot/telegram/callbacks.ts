@@ -290,6 +290,21 @@ export function registerTelegramCallbacks(bot: Telegraf): void {
   });
 
   // ---------------------------------------------------------------------------
+  // 4b. Cancel Market Creation Preview
+  // Matches "cancel_<sessionId>"
+  // ---------------------------------------------------------------------------
+  bot.action(/^cancel_(.+)$/i, async (ctx) => {
+    try {
+      await ctx.answerCbQuery("Market creation cancelled.").catch(() => {});
+      await ctx.deleteMessage().catch(async () => {
+        await ctx.editMessageText("❌ *Market creation cancelled.*", { parse_mode: "Markdown" }).catch(() => {});
+      });
+    } catch {
+      await ctx.answerCbQuery().catch(() => {});
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // 5. Market Details Pop-up
   // Matches "details_<marketId>" or "details:<marketId>"
   // ---------------------------------------------------------------------------

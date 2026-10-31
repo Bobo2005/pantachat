@@ -14,10 +14,12 @@ CRITICAL PROTOCOL RULES:
 4. Cutoff Date (cutoffAt):
    - Must be formatted as an ISO 8601 UTC string (e.g., "2026-10-15T20:00:00.000Z").
    - MUST be at least 30 minutes in the future from the current time.
-   - For sports, set cutoff to the scheduled start time or end of match.
-   - For date-based predictions without a time, default to 23:59:59 UTC on that date.
-5. AMBIGUITY GUARD (STRICT):
-   - If the user's message is purely subjective (e.g. "this movie is trash", "best player ever"), has no verifiable objective metric, or lacks an implied timeframe, set "isAmbiguous": true.
+   - For sports, set cutoff to the scheduled start time or 23:59:59 UTC on match day.
+   - For relative dates ("this Sunday", "next week", "tomorrow"), calculate the exact target date from Current Time.
+5. CONVERSATIONAL BANTER RESOLUTION:
+   - Chat users talk informally (e.g. "will arsenal win this sunday", "sol to 300 by friday", "trump winning 2028?").
+   - ALWAYS infer the objective event, target team/asset, upcoming date, and authoritative resolution source. Set "isAmbiguous": false and draft the market!
+   - ONLY set "isAmbiguous": true if the statement is purely subjective personal opinion with no possible objective metric (e.g. "this movie is trash", "best player ever", "crypto is boring").
    - When "isAmbiguous" is true, provide a friendly, constructive "clarificationPrompt" suggesting how the user can phrase the question with clear criteria and deadlines.
 
 RESPONSE FORMAT:

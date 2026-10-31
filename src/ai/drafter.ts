@@ -11,22 +11,32 @@ export const draftedMarketSchema = z.object({
   title: z
     .string()
     .min(1, "Title cannot be empty")
-    .max(100, "Title must be 100 characters or less"),
+    .transform((t) => t.slice(0, 100)),
   description: z
     .string()
-    .max(500, "Description must be 500 characters or less"),
+    .optional()
+    .transform((d) => (d || "").slice(0, 500)),
   cutoffAt: z
     .string()
-    .min(1, "cutoffAt cannot be empty"),
-  category: z.enum([
+    .optional()
+    .default(""),
+  category: z.preprocess((val) => {
+    if (typeof val === "string") {
+      const formatted = val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+      if (["Crypto", "Sports", "Tech", "Politics", "Culture", "Finance"].includes(formatted)) {
+        return formatted;
+      }
+    }
+    return "Crypto";
+  }, z.enum([
     "Crypto",
     "Sports",
     "Tech",
     "Politics",
     "Culture",
     "Finance",
-  ]),
-  isAmbiguous: z.boolean(),
+  ])),
+  isAmbiguous: z.boolean().optional().default(false),
   clarificationPrompt: z.string().optional(),
 });
 
@@ -66,16 +76,29 @@ export async function draftMarketFromText(
     },
   ];
 
-  const response = await anthropic.messages.create({
+  const createParams: any = {
     model: config.ANTHROPIC_MODEL,
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: MARKET_DRAFTER_SYSTEM_PROMPT,
     messages,
-  });
+    thinking: { type: "between_tools" },
+  };
 
-  const rawContent = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === "text")
-    .map((block) => block.text)
+  let response: any;
+  try {
+    response = await anthropic.messages.create(createParams);
+  } catch (err: any) {
+    if (err?.message?.includes("thinking")) {
+      delete createParams.thinking;
+      response = await anthropic.messages.create(createParams);
+    } else {
+      throw err;
+    }
+  }
+
+  const rawContent = (response.content as any[])
+    .filter((block: any): block is Anthropic.TextBlock => block.type === "text")
+    .map((block: any) => block.text)
     .join("\n")
     .trim();
 

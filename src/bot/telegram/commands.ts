@@ -17,26 +17,50 @@ import { handleInlineQuery } from "./inline.js";
 // Helper: Extract Text from Direct Message or Reply
 // =============================================================================
 
-function extractBanterText(ctx: Context): string {
+interface BanterExtraction {
+  banterText: string;
+  contextMessages: string[];
+}
+
+function extractBanterText(ctx: Context): BanterExtraction {
   const message = ctx.message as any;
-  if (!message) return "";
+  if (!message) return { banterText: "", contextMessages: [] };
+
+  const messageText = (message.text || message.caption || "").trim();
+  const commandArgs = messageText.replace(/^\/(market|create)(@\w+)?\s*/i, "").trim();
 
   // 1. If user replied to another message with /market
   if (message.reply_to_message) {
-    if (message.reply_to_message.text) {
-      return message.reply_to_message.text.trim();
-    }
-    if (message.reply_to_message.caption) {
-      return message.reply_to_message.caption.trim();
+    const replyMsg = message.reply_to_message;
+    const repliedText = (replyMsg.text || replyMsg.caption || "").trim();
+    const replySender = replyMsg.from?.username
+      ? `@${replyMsg.from.username}`
+      : (replyMsg.from?.first_name || "Friend");
+
+    if (repliedText) {
+      const context = [`${replySender}: "${repliedText}"`];
+      if (commandArgs) {
+        return {
+          banterText: `${commandArgs} (In reply to ${replySender}: "${repliedText}")`,
+          contextMessages: context,
+        };
+      }
+      return {
+        banterText: repliedText,
+        contextMessages: context,
+      };
     }
   }
 
   // 2. Direct arguments passed after command: /market <args>
-  if (message.text) {
-    return message.text.replace(/^\/(market|create)(@\w+)?\s*/i, "").trim();
+  if (commandArgs) {
+    return {
+      banterText: commandArgs,
+      contextMessages: [],
+    };
   }
 
-  return "";
+  return { banterText: "", contextMessages: [] };
 }
 
 // =============================================================================
@@ -59,6 +83,129 @@ export async function sendSafeReply(
       return await ctx.reply(stripped, fallbackExtra).catch(() => {});
     }
     throw err;
+  }
+}
+
+// =============================================================================
+// /market & /create Handler (Reply-to-Create)
+// =============================================================================
+
+export async function handleMarketDraft(ctx: Context): Promise<any> {
+  ctx.sendChatAction("typing").catch(() => {});
+  const { banterText, contextMessages } = extractBanterText(ctx);
+
+  if (!banterText) {
+    return sendSafeReply(
+      ctx,
+      `💡 *Reply-to-Market Guide:*\n\n` +
+      `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
+      `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
+      { parse_mode: "Markdown" }
+    );
+  }
+
+  const waitMsg = await sendSafeReply(ctx, "🤖 *Analyzing banter with Claude Sonnet 5.5...*", {
+    parse_mode: "Markdown",
+  });
+
+  try {
+    const draft = await draftMarketFromText(banterText, contextMessages);
+
+    if (waitMsg?.message_id && ctx.chat?.id) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+    }
+
+    // Ambiguity Guard Handling
+    if (draft.isAmbiguous) {
+      return sendSafeReply(
+        ctx,
+        `🤔 *Ambiguity Guard Notice:*\n\n` +
+        `${draft.clarificationPrompt || "This statement is subjective or lacks clear criteria."}\n\n` +
+        `_Try rephrasing with specific dates, metrics, or official sources!_`,
+        { parse_mode: "Markdown" }
+      );
+    }
+
+    const creatorId = ctx.from?.username || String(ctx.from?.id || "unknown");
+    const chatId = String(ctx.chat?.id || "");
+
+    // Create pending session
+    const session = await initiateMarketCreationSession({
+      platformUserId: creatorId,
+      platform: "telegram",
+      chatId,
+      title: draft.title,
+      description: draft.description,
+      category: draft.category,
+      cutoffAt: draft.cutoffAt,
+    });
+
+    const previewText = [
+      `📝 *Drafted Prediction Market Preview*`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `*Title:* ${draft.title}`,
+      `*Category:* ${draft.category}`,
+      `*Ends:* ${draft.cutoffAt}`,
+      ``,
+      `📜 *Resolution Criteria:*`,
+      `${draft.description}`,
+      ``,
+      `💰 *Creation Fee:* 50 USDC (Devnet test funds)`,
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+      `Tap below to sign the creation transaction in Phantom:`,
+    ].join("\n");
+
+    return sendSafeReply(ctx, previewText, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✅ Confirm & Launch Market", url: session.signUrl }],
+          [{ text: "❌ Cancel", callback_data: `cancel_${session.sessionId}` }],
+        ],
+      },
+    });
+  } catch (err: any) {
+    if (waitMsg?.message_id && ctx.chat?.id) {
+      await ctx.telegram.deleteMessage(ctx.chat.id, waitMsg.message_id).catch(() => {});
+    }
+    if (err instanceof DuplicateMarketError) {
+      const m = err.existingMarket;
+      const duplicateText = [
+        `⚠️ *Market Already Exists!*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `An active prediction market for this question is already live:`,
+        `*${m.title}*`,
+        ``,
+        `📊 *Current Odds:* YES ${(m.yesPrice * 100).toFixed(0)}% • NO ${(m.noPrice * 100).toFixed(0)}%`,
+        `📈 *Volume:* $${m.volumeUsdc.toFixed(2)} USDC`,
+        ``,
+        `_You cannot launch the same market twice, but you can trade on it right now!_`,
+      ].join("\n");
+
+      const isDuplicateClosed = isCutoffExpired(m.cutoffAt) || m.phase === "resolved";
+      const duplicateButtons = isDuplicateClosed
+        ? [
+            [{ text: "⏳ Trading Closed (Awaiting Resolution)", callback_data: `closed_${m.id}` }],
+            [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
+          ]
+        : [
+            [
+              { text: `Trade YES ($${m.yesPrice.toFixed(2)})`, callback_data: `buy_${m.id}_yes_20` },
+              { text: `Trade NO ($${m.noPrice.toFixed(2)})`, callback_data: `buy_${m.id}_no_20` },
+            ],
+            [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
+          ];
+
+      return sendSafeReply(ctx, duplicateText, {
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: duplicateButtons,
+        },
+      });
+    }
+
+    console.error("[Telegram /market Error]:", err);
+    return sendSafeReply(ctx, `❌ Failed to draft market: ${err.message || "Unknown error"}`);
   }
 }
 
@@ -245,118 +392,6 @@ export function registerTelegramCommands(bot: Telegraf): void {
   // ---------------------------------------------------------------------------
   // /market & /create (Reply-to-Create)
   // ---------------------------------------------------------------------------
-  const handleMarketDraft = async (ctx: Context) => {
-    ctx.sendChatAction("typing").catch(() => {});
-    const banterText = extractBanterText(ctx);
-
-    if (!banterText) {
-      return sendSafeReply(
-        ctx,
-        `💡 *Reply-to-Market Guide:*\n\n` +
-        `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
-        `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
-        { parse_mode: "Markdown" }
-      );
-    }
-
-    const waitMsg = await sendSafeReply(ctx, "🤖 *Analyzing banter with Claude Sonnet 5.5...*", {
-      parse_mode: "Markdown",
-    });
-
-    try {
-      const draft = await draftMarketFromText(banterText);
-
-      // Ambiguity Guard Handling
-      if (draft.isAmbiguous) {
-        return sendSafeReply(
-          ctx,
-          `🤔 *Ambiguity Guard Notice:*\n\n` +
-          `${draft.clarificationPrompt || "This statement is subjective or lacks clear criteria."}\n\n` +
-          `_Try rephrasing with specific dates, metrics, or official sources!_`,
-          { parse_mode: "Markdown" }
-        );
-      }
-
-      const creatorId = ctx.from?.username || String(ctx.from?.id || "unknown");
-      const chatId = String(ctx.chat?.id || "");
-
-      // Create pending session
-      const session = await initiateMarketCreationSession({
-        platformUserId: creatorId,
-        platform: "telegram",
-        chatId,
-        title: draft.title,
-        description: draft.description,
-        category: draft.category,
-        cutoffAt: draft.cutoffAt,
-      });
-
-      const previewText = [
-        `📝 *Drafted Prediction Market Preview*`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `*Title:* ${draft.title}`,
-        `*Category:* ${draft.category}`,
-        `*Ends:* ${draft.cutoffAt}`,
-        ``,
-        `📜 *Resolution Criteria:*`,
-        `${draft.description}`,
-        ``,
-        `💰 *Creation Fee:* 50 USDC (Devnet test funds)`,
-        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-        `Tap below to sign the creation transaction in Phantom:`,
-      ].join("\n");
-
-      return sendSafeReply(ctx, previewText, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "✅ Confirm & Launch Market", url: session.signUrl }],
-            [{ text: "❌ Cancel", callback_data: `cancel_${session.sessionId}` }],
-          ],
-        },
-      });
-    } catch (err: any) {
-      if (err instanceof DuplicateMarketError) {
-        const m = err.existingMarket;
-        const duplicateText = [
-          `⚠️ *Market Already Exists!*`,
-          `━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-          `An active prediction market for this question is already live:`,
-          `*${m.title}*`,
-          ``,
-          `📊 *Current Odds:* YES ${(m.yesPrice * 100).toFixed(0)}% • NO ${(m.noPrice * 100).toFixed(0)}%`,
-          `📈 *Volume:* $${m.volumeUsdc.toFixed(2)} USDC`,
-          ``,
-          `_You cannot launch the same market twice, but you can trade on it right now!_`,
-        ].join("\n");
-
-        const isDuplicateClosed = isCutoffExpired(m.cutoffAt) || m.phase === "resolved";
-        const duplicateButtons = isDuplicateClosed
-          ? [
-              [{ text: "⏳ Trading Closed (Awaiting Resolution)", callback_data: `closed_${m.id}` }],
-              [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
-            ]
-          : [
-              [
-                { text: `Trade YES ($${m.yesPrice.toFixed(2)})`, callback_data: `buy_${m.id}_yes_20` },
-                { text: `Trade NO ($${m.noPrice.toFixed(2)})`, callback_data: `buy_${m.id}_no_20` },
-              ],
-              [{ text: "📊 View Market Card", callback_data: `view_${m.id}` }],
-            ];
-
-        return sendSafeReply(ctx, duplicateText, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            inline_keyboard: duplicateButtons,
-          },
-        });
-      }
-
-      console.error("[Telegram /market Error]:", err);
-      return sendSafeReply(ctx, `❌ Failed to draft market: ${err.message || "Unknown error"}`);
-    }
-  };
-
   bot.command("market", handleMarketDraft);
   bot.command("create", handleMarketDraft);
 
