@@ -29,13 +29,23 @@ function extractBanterText(ctx: Context): BanterExtraction {
   const messageText = (message.text || message.caption || "").trim();
   const commandArgs = messageText.replace(/^\/(market|create)(@\w+)?\s*/i, "").trim();
 
-  // 1. If user replied to another message with /market
-  if (message.reply_to_message) {
-    const replyMsg = message.reply_to_message;
-    const repliedText = (replyMsg.text || replyMsg.caption || "").trim();
-    const replySender = replyMsg.from?.username
+  // 1. Check if Telegram included a Quote (Telegram 10.0+ quote reply)
+  const quoteText = (message.quote?.text || "").trim();
+
+  // 2. If user replied to another message with /market or quoted
+  const replyMsg = message.reply_to_message;
+  const repliedText = (
+    replyMsg?.text ||
+    replyMsg?.caption ||
+    replyMsg?.poll?.question ||
+    quoteText ||
+    ""
+  ).trim();
+
+  if (replyMsg || quoteText) {
+    const replySender = replyMsg?.from?.username
       ? `@${replyMsg.from.username}`
-      : (replyMsg.from?.first_name || "Friend");
+      : (replyMsg?.from?.first_name || "Friend");
 
     if (repliedText) {
       const context = [`${replySender}: "${repliedText}"`];
@@ -52,7 +62,7 @@ function extractBanterText(ctx: Context): BanterExtraction {
     }
   }
 
-  // 2. Direct arguments passed after command: /market <args>
+  // 3. Direct arguments passed after command: /market <args>
   if (commandArgs) {
     return {
       banterText: commandArgs,
@@ -95,11 +105,16 @@ export async function handleMarketDraft(ctx: Context): Promise<any> {
   const { banterText, contextMessages } = extractBanterText(ctx);
 
   if (!banterText) {
+    const isGroup = ctx.chat?.type !== "private";
+    const groupNotice = isGroup
+      ? `\n\n📌 *Tip for Groups:* If you replied to a message, ensure @${config.TELEGRAM_BOT_USERNAME || "pantachat_bot"} is promoted to **Admin** (or disable Group Privacy in @BotFather) so Telegram allows the bot to read replied messages.`
+      : "";
+
     return sendSafeReply(
       ctx,
       `💡 *Reply-to-Market Guide:*\n\n` +
       `Reply directly to any friend's message with \`/market\` or type your prediction statement after the command.\n\n` +
-      `_Example:_ \`/market Will Solana hit $300 by end of the year?\``,
+      `_Example:_ \`/market Will Barca win their next match?\`${groupNotice}`,
       { parse_mode: "Markdown" }
     );
   }

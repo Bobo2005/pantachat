@@ -65,6 +65,20 @@ export const FEW_SHOT_EXAMPLES = [
   },
   {
     role: "user" as const,
+    content: `Current time: 2026-10-31T12:00:00.000Z\nContext: User replies to message "Will Barca win their next match"`,
+  },
+  {
+    role: "assistant" as const,
+    content: JSON.stringify({
+      title: "Will FC Barcelona win their next match?",
+      description: "Resolves to YES if FC Barcelona wins their next official first-team match in regulation or extra time/penalties as reported on the official competition match report (La Liga, UEFA, etc.). Resolves to NO if they draw or lose.",
+      cutoffAt: "2026-11-01T23:59:59.000Z",
+      category: "Sports",
+      isAmbiguous: false,
+    }),
+  },
+  {
+    role: "user" as const,
     content: `Current time: 2026-10-02T12:00:00.000Z\nContext: User replies to message "Apple's definitely dropping the M5 chip before June"`,
   },
   {
